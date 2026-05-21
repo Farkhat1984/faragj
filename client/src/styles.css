@@ -737,10 +737,20 @@ p {
   transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
 
-.answer-grid button:hover {
-  border-color: #93c5fd;
-  background: var(--surface-blue);
-  box-shadow: var(--shadow-sm);
+@media (hover: hover) {
+  .answer-grid button:hover {
+    border-color: #93c5fd;
+    background: var(--surface-blue);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+.answer-grid button:focus,
+.answer-grid button:focus-visible {
+  outline: none;
+  border-color: var(--line);
+  background: #ffffff;
+  box-shadow: none;
 }
 
 .answer-grid button.is-correct,
