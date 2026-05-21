@@ -626,11 +626,9 @@ function PlayerApp() {
       {state && playerMode === 'quiz' && state.phase === 'quiz-question' && state.activeQuestion && (
         <section className="quiz-card" ref={quizCardRef}>
           <div className="quiz-meta">
+            <span>{state.activeQuestion.roundTitle}</span>
             <span>
-              <TimerText endsAt={state.questionEndsAt} /> · {state.activeQuestion.roundTitle}
-            </span>
-            <span>
-              {state.activeQuestion.number}/{state.activeQuestion.total}
+              <TimerText endsAt={state.questionEndsAt} /> · {state.activeQuestion.number}/{state.activeQuestion.total}
             </span>
           </div>
           {state.activeQuestion.media && <QuestionMediaView media={state.activeQuestion.media} />}
