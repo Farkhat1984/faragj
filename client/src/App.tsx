@@ -5,9 +5,12 @@ import {
   CircleStop,
   Clock3,
   Crown,
+  Gift,
   Image as ImageIcon,
   ListChecks,
   LogIn,
+  Medal,
+  Menu,
   MonitorUp,
   Pencil,
   Play,
@@ -15,31 +18,45 @@ import {
   Radio,
   RotateCcw,
   Save,
+  Shuffle,
   Sparkles,
   Star,
   Trash2,
   Upload,
   Video,
+  Volume2,
   Trophy,
   Users,
   Vote,
   Wifi,
-  WifiOff
+  WifiOff,
+  X
 } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { api } from './api';
-import { PlayerState, PublicState, QuestionMedia, QuizQuestion, QuizRound } from './types';
+import { PlayerState, PublicState, QuestionMedia, QuizQuestion, QuizRound, RandomDrawState } from './types';
 
 const PARTICIPANT_KEY = 'vibe-code-participant';
 const ADMIN_TOKEN_KEY = 'vibe-code-admin-token';
 const IMAGE_LIMIT_BYTES = 5 * 1024 * 1024;
 const VIDEO_LIMIT_BYTES = 30 * 1024 * 1024;
+const AUDIO_LIMIT_BYTES = 15 * 1024 * 1024;
 
 type StoredParticipant = {
   id: string;
   nickname: string;
+};
+
+type PlayerMode = 'menu' | 'quiz' | 'voting' | 'random';
+type AdminMode = 'home' | 'quiz' | 'voting' | 'roulette';
+
+type NavigationItem<T extends string> = {
+  id: T;
+  label: string;
+  status: string;
+  icon: React.ReactNode;
 };
 
 function createQuestion(): QuizQuestion {
@@ -74,6 +91,22 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
 }
 
+function formatPlace(place: number) {
+  return `${place}-е место`;
+}
+
+function mediaKindLabel(kind: QuestionMedia['kind']) {
+  if (kind === 'image') return 'Изображение';
+  if (kind === 'video') return 'Видео';
+  return 'Аудио';
+}
+
+function mediaQuestionLabel(kind: QuestionMedia['kind']) {
+  if (kind === 'image') return 'Фото к вопросу';
+  if (kind === 'video') return 'Видео к вопросу';
+  return 'Аудио к вопросу';
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -85,6 +118,91 @@ function readFileAsDataUrl(file: File) {
 
 function cls(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
+}
+
+function BurgerMenu<T extends string>({
+  title,
+  subtitle,
+  activeId,
+  items,
+  onSelect
+}: {
+  title: string;
+  subtitle: string;
+  activeId: T;
+  items: Array<NavigationItem<T>>;
+  onSelect: (id: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  function selectItem(id: T) {
+    onSelect(id);
+    setOpen(false);
+  }
+
+  return (
+    <>
+      <button
+        className="burger-button"
+        type="button"
+        aria-label="Открыть меню"
+        aria-expanded={open}
+        title="Меню"
+        onClick={() => setOpen(true)}
+      >
+        <Menu size={22} />
+      </button>
+      {open && (
+        <>
+          <button className="menu-backdrop" type="button" aria-label="Закрыть меню" onClick={() => setOpen(false)} />
+          <aside className="side-menu" role="dialog" aria-modal="true" aria-label={title}>
+            <div className="side-menu__head">
+              <div className="side-menu__title">
+                <span className="eyebrow">{subtitle}</span>
+                <strong>{title}</strong>
+              </div>
+              <button className="side-menu__close" type="button" aria-label="Закрыть меню" title="Закрыть" onClick={() => setOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <nav className="side-menu__nav" aria-label={title}>
+              {items.map((item) => (
+                <button
+                  className={cls('side-menu__item', activeId === item.id && 'is-active')}
+                  type="button"
+                  key={item.id}
+                  onClick={() => selectItem(item.id)}
+                >
+                  <span className="side-menu__icon">{item.icon}</span>
+                  <span>
+                    <strong>{item.label}</strong>
+                    <em>{item.status}</em>
+                  </span>
+                </button>
+              ))}
+            </nav>
+          </aside>
+        </>
+      )}
+    </>
+  );
 }
 
 function useTicker(interval = 250) {
@@ -193,16 +311,21 @@ function ConnectionPill({ connected }: { connected: boolean }) {
 }
 
 function QuestionMediaView({ media, compact = false }: { media: QuestionMedia; compact?: boolean }) {
+  const icon =
+    media.kind === 'image' ? <ImageIcon size={15} /> : media.kind === 'video' ? <Video size={15} /> : <Volume2 size={15} />;
+
   return (
     <figure className={cls('question-media', compact && 'question-media--compact')}>
       {media.kind === 'image' ? (
         <img src={media.url} alt={media.name || 'Медиа к вопросу'} />
+      ) : media.kind === 'audio' ? (
+        <audio src={media.url} controls preload="metadata" />
       ) : (
         <video src={media.url} controls playsInline preload="metadata" />
       )}
       <figcaption>
-        {media.kind === 'image' ? <ImageIcon size={15} /> : <Video size={15} />}
-        {media.kind === 'image' ? 'Фото к вопросу' : 'Видео к вопросу'}
+        {icon}
+        {mediaQuestionLabel(media.kind)}
       </figcaption>
     </figure>
   );
@@ -295,7 +418,7 @@ function PlayerApp() {
   const [answerStatus, setAnswerStatus] = useState('');
   const [voteStatus, setVoteStatus] = useState('');
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
-  const [playerMode, setPlayerMode] = useState<'menu' | 'quiz' | 'voting'>('menu');
+  const [playerMode, setPlayerMode] = useState<PlayerMode>('menu');
 
   useEffect(() => {
     setAnswerStatus('');
@@ -305,6 +428,19 @@ function PlayerApp() {
     setVoteStatus('');
     setSelectedRating(null);
   }, [state?.voting.target?.id]);
+
+  useEffect(() => {
+    if (!state) return;
+    if (state.phase === 'quiz-question' || state.phase === 'quiz-results') {
+      setPlayerMode('quiz');
+    }
+    if (state.phase === 'voting' || state.phase === 'voting-results') {
+      setPlayerMode('voting');
+    }
+    if (state.phase === 'random-drawing' || state.phase === 'random-results') {
+      setPlayerMode('random');
+    }
+  }, [state?.phase]);
 
   if (!participant || kickedMessage || resetMessage) {
     return <LoginScreen onLogin={setParticipant} />;
@@ -346,11 +482,24 @@ function PlayerApp() {
     state?.phase === 'quiz-question' ? 'Вопрос в эфире' : state?.phase === 'quiz-results' ? 'Результаты готовы' : 'Ждем старта';
   const votingStatus =
     state?.phase === 'voting' ? 'Голосование активно' : state?.phase === 'voting-results' ? 'Итоги готовы' : 'Ждем запуска';
+  const randomStatus = state?.random.active
+    ? 'Рулетка крутится'
+    : state?.random.winners.length
+      ? `${state.random.winners.length} побед.`
+      : 'Ждем розыгрыш';
+  const playerHomeStatus = state ? `${state.participant.score} баллов · ${connected ? 'онлайн' : 'нет связи'}` : 'Подключаемся';
+  const playerMenuItems: Array<NavigationItem<PlayerMode>> = [
+    { id: 'menu', label: 'Главная', status: playerHomeStatus, icon: <Sparkles size={20} /> },
+    { id: 'quiz', label: 'Викторина', status: quizStatus, icon: <ListChecks size={20} /> },
+    { id: 'voting', label: 'Голосование', status: votingStatus, icon: <Vote size={20} /> },
+    { id: 'random', label: 'Рандом', status: randomStatus, icon: <Shuffle size={20} /> }
+  ];
 
   return (
     <main className="player-shell">
       <header className="player-topbar">
-        <div>
+        <BurgerMenu title="Меню участника" subtitle="участник" activeId={playerMode} items={playerMenuItems} onSelect={setPlayerMode} />
+        <div className="shell-title">
           <span className="eyebrow">участник</span>
           <h1>{state?.participant.nickname ?? participant.nickname}</h1>
         </div>
@@ -369,32 +518,35 @@ function PlayerApp() {
         </section>
       )}
 
-      {state && (
-        <section className="menu-widget-grid player-menu-grid">
-          <button className={cls('menu-widget', playerMode === 'quiz' && 'is-active')} onClick={() => setPlayerMode('quiz')}>
-            <span className="menu-widget__icon">
-              <ListChecks size={24} />
-            </span>
-            <small>меню</small>
-            <strong>Викторина</strong>
-            <em>{quizStatus}</em>
-          </button>
-          <button className={cls('menu-widget', playerMode === 'voting' && 'is-active')} onClick={() => setPlayerMode('voting')}>
-            <span className="menu-widget__icon">
-              <Vote size={24} />
-            </span>
-            <small>меню</small>
-            <strong>Голосование</strong>
-            <em>{votingStatus}</em>
-          </button>
-        </section>
-      )}
-
       {state && playerMode === 'menu' && (
-        <section className="stage-card waiting-card">
-          <Sparkles size={38} />
-          <h2>Выбери меню</h2>
-          <p>Открой викторину или голосование.</p>
+        <section className="stage-card player-home-card">
+          <div className="player-home-head">
+            <span className="eyebrow">главная</span>
+            <h2>{phaseLabel(state.phase)}</h2>
+            <p>{leaderboardRows[0] ? `Лидер сейчас: ${leaderboardRows[0].nickname}` : 'Рейтинг появится после первых ответов'}</p>
+          </div>
+          <div className="player-status-grid">
+            <div className="status-tile">
+              <Trophy size={20} />
+              <span>Мои баллы</span>
+              <strong>{state.participant.score}</strong>
+            </div>
+            <div className="status-tile">
+              <ListChecks size={20} />
+              <span>Викторина</span>
+              <strong>{quizStatus}</strong>
+            </div>
+            <div className="status-tile">
+              <Vote size={20} />
+              <span>Голосование</span>
+              <strong>{votingStatus}</strong>
+            </div>
+            <div className="status-tile">
+              <Shuffle size={20} />
+              <span>Рандом</span>
+              <strong>{randomStatus}</strong>
+            </div>
+          </div>
         </section>
       )}
 
@@ -419,6 +571,14 @@ function PlayerApp() {
           <ListChecks size={38} />
           <h2>Викторина на паузе</h2>
           <p>Посмотри итоги в меню голосования.</p>
+        </section>
+      )}
+
+      {state && playerMode === 'quiz' && (state.phase === 'random-drawing' || state.phase === 'random-results') && (
+        <section className="stage-card waiting-card">
+          <ListChecks size={38} />
+          <h2>Викторина на паузе</h2>
+          <p>Сейчас идет розыгрыш победителей.</p>
         </section>
       )}
 
@@ -459,13 +619,19 @@ function PlayerApp() {
         </section>
       )}
 
-      {state && playerMode === 'voting' && (state.phase === 'idle' || state.phase === 'quiz-question' || state.phase === 'quiz-results') && (
-        <section className="stage-card waiting-card">
-          <Vote size={38} />
-          <h2>Голосование ждет запуска</h2>
-          <p>Когда ведущий выберет участника или приложение, оценка появится здесь.</p>
-        </section>
-      )}
+      {state &&
+        playerMode === 'voting' &&
+        (state.phase === 'idle' ||
+          state.phase === 'quiz-question' ||
+          state.phase === 'quiz-results' ||
+          state.phase === 'random-drawing' ||
+          state.phase === 'random-results') && (
+          <section className="stage-card waiting-card">
+            <Vote size={38} />
+            <h2>Голосование ждет запуска</h2>
+            <p>Когда ведущий выберет участника или приложение, оценка появится здесь.</p>
+          </section>
+        )}
 
       {state && playerMode === 'voting' && state.phase === 'voting' && state.voting.target && (
         <section className="vote-card">
@@ -502,6 +668,29 @@ function PlayerApp() {
           ))}
         </section>
       )}
+
+      {state && playerMode === 'random' && state.phase !== 'random-drawing' && state.phase !== 'random-results' && state.random.winners.length === 0 && (
+        <section className="stage-card waiting-card">
+          <Gift size={38} />
+          <h2>Рандом ждет запуска</h2>
+          <p>Когда ведущий включит рулетку, окно откроется здесь автоматически.</p>
+        </section>
+      )}
+
+      {state &&
+        playerMode === 'random' &&
+        (state.phase === 'random-drawing' || state.phase === 'random-results' || state.random.winners.length > 0) && (
+          <RandomDrawView
+            participants={leaderboardRows.map((row) => ({
+              id: row.participantId ?? row.nickname,
+              nickname: row.nickname,
+              score: row.score,
+              online: row.online
+            }))}
+            random={state.random}
+            currentParticipantId={state.participant.id}
+          />
+        )}
 
       <aside className="mobile-board">
         <h3>Баллы участников</h3>
@@ -610,6 +799,80 @@ function ParticipantPager({
   );
 }
 
+function RandomDrawView({
+  participants,
+  random,
+  currentParticipantId,
+  compact = false
+}: {
+  participants: Array<{ id: string; nickname: string; score?: number; online?: boolean }>;
+  random: RandomDrawState;
+  currentParticipantId?: string;
+  compact?: boolean;
+}) {
+  const baseNames = participants.length > 0 ? participants.map((participant) => participant.nickname) : random.winners.map((winner) => winner.nickname);
+  const reelItems = Array.from({ length: Math.max(18, baseNames.length * 3 || 18) }, (_, index) => baseNames[index % Math.max(1, baseNames.length)] ?? 'Ждем участников');
+  const placeCount = random.winnersCount || random.winners.length || 1;
+  const totalCount = random.participantsCount || participants.length;
+  const ownWinner = currentParticipantId ? random.winners.find((winner) => winner.participantId === currentParticipantId) : null;
+  const hasResults = random.winners.length > 0;
+
+  return (
+    <article className={cls('random-card', compact && 'random-card--compact', ownWinner && 'is-own-winner')} aria-live="polite">
+      <div className="random-card__head">
+        <span className="random-kicker">
+          {random.active ? <Clock3 size={16} /> : hasResults ? <Medal size={16} /> : <Shuffle size={16} />}
+          Розыгрыш
+        </span>
+        <div>
+          <h2>{random.active ? 'Крутим рулетку' : hasResults ? 'Победители выбраны' : 'Рандом готов'}</h2>
+          <p>
+            {totalCount > 0
+              ? `${random.active ? 'Выбираем' : 'Выбрано'} ${placeCount} из ${totalCount}`
+              : 'Участники появятся после входа'}
+          </p>
+        </div>
+      </div>
+
+      <div className="random-machine">
+        <div className="random-machine__marker" />
+        <div className="random-reel">
+          <div className={cls('random-reel__track', random.active && 'is-spinning')}>
+            {reelItems.map((name, index) => (
+              <span key={`${name}-${index}`}>{name}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {random.active && <p className="random-hint">Список прокручивается, места откроются после остановки.</p>}
+
+      {!random.active && hasResults && (
+        <>
+          {ownWinner && (
+            <p className="random-own-result">
+              Ты победитель: <strong>{formatPlace(ownWinner.place)}</strong>
+            </p>
+          )}
+          <div className="winner-grid">
+            {random.winners.map((winner) => (
+              <div className={cls('winner-row', winner.participantId === currentParticipantId && 'is-current')} key={winner.participantId}>
+                <span className={cls('place-badge', winner.place === 1 && 'is-first', winner.place === 2 && 'is-second', winner.place === 3 && 'is-third')}>
+                  {winner.place === 1 ? <Crown size={16} /> : <Medal size={16} />}
+                  {formatPlace(winner.place)}
+                </span>
+                <strong>{winner.nickname}</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {!random.active && !hasResults && <p className="empty-text">Нажми старт в админке, чтобы выбрать победителей.</p>}
+    </article>
+  );
+}
+
 function AdminLogin({ onLogin }: { onLogin: (token: string) => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -641,7 +904,6 @@ function AdminLogin({ onLogin }: { onLogin: (token: string) => void }) {
           <MonitorUp size={18} />
           Admin Live Desk
         </div>
-        <h1>Пульт выступления</h1>
         <label htmlFor="password">Пароль</label>
         <input
           id="password"
@@ -671,7 +933,8 @@ function AdminApp() {
   const [voteDescription, setVoteDescription] = useState('');
   const [adminMessage, setAdminMessage] = useState('');
   const [newRoundTitle, setNewRoundTitle] = useState('');
-  const [adminMode, setAdminMode] = useState<'quiz' | 'voting' | 'participants' | 'rating'>('quiz');
+  const [adminMode, setAdminMode] = useState<AdminMode>('home');
+  const [randomWinnerCount, setRandomWinnerCount] = useState(1);
 
   useEffect(() => {
     if (!state || draftRounds.length > 0) return;
@@ -684,12 +947,26 @@ function AdminApp() {
   const leaderboardRows = state?.quiz.leaderboard ?? [];
   const activeRound = state?.quiz.rounds.find((round) => round.id === state.quiz.activeRoundId);
   const participants = state?.participants ?? [];
+  const random = state?.random;
+  const onlineParticipantsCount = participants.filter((participant) => participant.online).length;
   const adminQuizStatus =
     state?.phase === 'quiz-question' ? 'Вопрос в эфире' : state?.phase === 'quiz-results' ? 'Результаты' : 'Настройка викторин';
   const adminVotingStatus =
     state?.phase === 'voting' ? 'Голосование активно' : state?.phase === 'voting-results' ? 'Итоги голосования' : 'Оценка приложений';
-  const adminParticipantsStatus = `${participants.filter((participant) => participant.online).length} онлайн · ${participants.length} всего`;
+  const adminParticipantsStatus = `${onlineParticipantsCount} онлайн · ${participants.length} всего`;
   const adminRatingStatus = leaderboardRows[0] ? `Лидер: ${leaderboardRows[0].nickname}` : 'Пока пусто';
+  const adminHomeStatus = leaderboardRows[0] ? `${adminParticipantsStatus} · ${adminRatingStatus}` : adminParticipantsStatus;
+  const adminRandomStatus = random?.active
+    ? 'Крутится'
+    : random?.winners.length
+      ? `${random.winners.length} побед.`
+      : `${participants.length} участников`;
+  const adminMenuItems: Array<NavigationItem<AdminMode>> = [
+    { id: 'home', label: 'Главная', status: adminHomeStatus, icon: <Sparkles size={20} /> },
+    { id: 'quiz', label: 'Викторина', status: adminQuizStatus, icon: <ListChecks size={20} /> },
+    { id: 'voting', label: 'Голосование', status: adminVotingStatus, icon: <Vote size={20} /> },
+    { id: 'roulette', label: 'Рулетка', status: adminRandomStatus, icon: <Shuffle size={20} /> }
+  ];
   const votedParticipantIds = useMemo(() => new Set(state?.voting.history.map((result) => result.targetId) ?? []), [state?.voting.history]);
   const availableVoteParticipants = useMemo(
     () => participants.filter((participant) => !votedParticipantIds.has(participant.id)),
@@ -708,6 +985,10 @@ function AdminApp() {
     }
     setSelectedVoteParticipantId(availableVoteParticipants[0]?.id ?? '');
   }, [availableVoteParticipants, participants, selectedVoteParticipantId, state, votedParticipantIds]);
+
+  useEffect(() => {
+    setRandomWinnerCount((count) => Math.max(1, Math.min(count, Math.max(1, participants.length))));
+  }, [participants.length]);
 
   if (!token) {
     return <AdminLogin onLogin={setToken} />;
@@ -832,13 +1113,20 @@ function AdminApp() {
     });
   }
 
+  async function startRandomDraw() {
+    if (participants.length === 0) {
+      setAdminMessage('Нет участников для розыгрыша');
+      return;
+    }
+
+    const winnersCount = Math.max(1, Math.min(randomWinnerCount, participants.length));
+    await adminCall('/api/admin/random/start', { winnersCount });
+  }
+
   return (
     <main className="admin-shell">
       <header className="admin-header">
-        <div>
-          <span className="eyebrow">vibe code live</span>
-          <h1>Пульт выступления</h1>
-        </div>
+        <BurgerMenu title="Меню админа" subtitle="админ" activeId={adminMode} items={adminMenuItems} onSelect={setAdminMode} />
         <div className="admin-actions">
           <ConnectionPill connected={connected} />
           <button
@@ -853,168 +1141,218 @@ function AdminApp() {
         </div>
       </header>
 
-      <section className="menu-widget-grid admin-menu-grid">
-        <button className={cls('menu-widget', adminMode === 'quiz' && 'is-active')} onClick={() => setAdminMode('quiz')}>
-          <span className="menu-widget__icon">
-            <ListChecks size={24} />
-          </span>
-          <small>админ меню</small>
-          <strong>Викторина</strong>
-          <em>{adminQuizStatus}</em>
-        </button>
-        <button className={cls('menu-widget', adminMode === 'voting' && 'is-active')} onClick={() => setAdminMode('voting')}>
-          <span className="menu-widget__icon">
-            <Vote size={24} />
-          </span>
-          <small>админ меню</small>
-          <strong>Голосование</strong>
-          <em>{adminVotingStatus}</em>
-        </button>
-        <button className={cls('menu-widget', adminMode === 'participants' && 'is-active')} onClick={() => setAdminMode('participants')}>
-          <span className="menu-widget__icon">
-            <Users size={24} />
-          </span>
-          <small>админ меню</small>
-          <strong>Участники</strong>
-          <em>{adminParticipantsStatus}</em>
-        </button>
-        <button className={cls('menu-widget', adminMode === 'rating' && 'is-active')} onClick={() => setAdminMode('rating')}>
-          <span className="menu-widget__icon">
-            <Trophy size={24} />
-          </span>
-          <small>админ меню</small>
-          <strong>Рейтинг</strong>
-          <em>{adminRatingStatus}</em>
-        </button>
-      </section>
+      {adminMessage && <p className="admin-message admin-message--global">{adminMessage}</p>}
 
-      <section className="admin-grid admin-grid--single">
-        <div className={cls('console-panel', adminMode !== 'quiz' && 'is-hidden')}>
-          <div className="panel-title">
-            <Play size={18} />
-            Эфир
-          </div>
-          <div className="live-state">
-            <strong>{phaseLabel(state?.phase ?? 'idle')}</strong>
-            <span>{activeRound ? activeRound.title : 'Викторина не запущена'}</span>
-          </div>
-          {state?.phase === 'quiz-question' && <TimerRing endsAt={state.quiz.questionEndsAt} compact />}
-          <div className="button-grid">
-            <select value={effectiveRoundId} onChange={(event) => setSelectedRoundId(event.target.value)}>
-              {draftRounds.map((round) => (
-                <option key={round.id} value={round.id}>
-                  {round.title}
-                </option>
-              ))}
-            </select>
-            <button className="primary-button" onClick={() => adminCall('/api/admin/quiz/start', { roundId: effectiveRoundId })}>
-              <Play size={18} />
-              Старт / продолжить
-            </button>
-            <button className="secondary-button" onClick={() => adminCall('/api/admin/quiz/end-question')}>
-              <CircleStop size={18} />
-              Стоп вопрос
-            </button>
-            <button className="danger-button" onClick={() => adminCall('/api/admin/reset-scores')}>
-              <RotateCcw size={18} />
-              Сброс баллов
-            </button>
-            <button className="danger-button" onClick={() => adminCall('/api/admin/reset-session')}>
-              <Trash2 size={18} />
-              Новая сессия
-            </button>
-          </div>
-          {adminMessage && <p className="admin-message">{adminMessage}</p>}
-        </div>
-
-        <div className={cls('console-panel', adminMode !== 'participants' && 'is-hidden')}>
-          <div className="panel-title">
-            <Users size={18} />
-            Участники
-          </div>
-          <div className="stats-row">
-            <strong>{participants.filter((participant) => participant.online).length}</strong>
-            <span>онлайн</span>
-            <strong>{participants.length}</strong>
-            <span>всего</span>
-          </div>
-          <ParticipantPager participants={participants} pageSize={10} />
-        </div>
-
-        <div className={cls('console-panel', adminMode !== 'rating' && 'is-hidden')}>
-          <div className="panel-title">
-            <Trophy size={18} />
-            Рейтинг
-          </div>
-          <Leaderboard rows={leaderboardRows} pageSize={10} />
-        </div>
-
-        <div className={cls('console-panel voting-panel', adminMode !== 'voting' && 'is-hidden')}>
-          <div className="panel-title">
-            <Vote size={18} />
-            Голосование
-          </div>
-          <label>
-            Участник для оценки
-            <select
-              value={selectedVoteParticipantId}
-              onChange={(event) => setSelectedVoteParticipantId(event.target.value)}
-              disabled={participants.length === 0 || availableVoteParticipants.length === 0}
-            >
-              {participants.length === 0 && <option value="">Пока нет участников</option>}
-              {participants.length > 0 && availableVoteParticipants.length === 0 && <option value="">Все уже оценены</option>}
-              {participants.map((participant) => {
-                const alreadyVoted = votedParticipantIds.has(participant.id);
-                return (
-                  <option key={participant.id} value={participant.id} disabled={alreadyVoted}>
-                    {participant.nickname}
-                    {alreadyVoted ? ' — уже голосовали' : ''}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-          <input
-            placeholder="Короткое описание, например: приложение команды"
-            value={voteDescription}
-            onChange={(event) => setVoteDescription(event.target.value)}
-          />
-          <div className="button-grid two">
-            <button className="primary-button" onClick={startVoting} disabled={!selectedVoteParticipant || votedParticipantIds.has(selectedVoteParticipant.id)}>
-              <Radio size={18} />
-              Запустить
-            </button>
-            <button className="secondary-button" onClick={() => adminCall('/api/admin/voting/stop')}>
-              <CircleStop size={18} />
-              Завершить
-            </button>
-          </div>
-          {state?.voting.session.target && (
-            <div className="vote-summary">
-              <strong>{state.voting.session.target.name}</strong>
-              <span>{state.voting.session.votes.length} голосов</span>
-              {state.voting.results[0] && <em>{state.voting.results[0].average.toFixed(2)}</em>}
-            </div>
-          )}
-          <div className="voting-history">
+      {adminMode === 'home' && (
+        <section className="admin-home-grid">
+          <div className="console-panel admin-home-summary">
             <div className="panel-title">
-              <Check size={17} />
-              Уже голосовали
+              <Sparkles size={18} />
+              Главная
             </div>
-            {state?.voting.history.length ? (
-              state.voting.history.map((result) => (
-                <div className="voting-history__row" key={result.targetId}>
-                  <strong>{result.name}</strong>
-                  <span>{result.votesCount} голосов</span>
-                  <em>{result.average.toFixed(2)}</em>
-                </div>
-              ))
-            ) : (
-              <p className="empty-text">Пока никто не оценен</p>
-            )}
+            <div className="live-state">
+              <strong>{phaseLabel(state?.phase ?? 'idle')}</strong>
+              <span>{activeRound ? activeRound.title : 'Викторина не запущена'}</span>
+            </div>
+            <div className="home-metrics">
+              <div className="home-metric">
+                <Users size={18} />
+                <span>Онлайн</span>
+                <strong>{onlineParticipantsCount}</strong>
+              </div>
+              <div className="home-metric">
+                <Users size={18} />
+                <span>Всего</span>
+                <strong>{participants.length}</strong>
+              </div>
+              <div className="home-metric">
+                <Trophy size={18} />
+                <span>Лидер</span>
+                <strong>{leaderboardRows[0]?.nickname ?? 'Пока нет'}</strong>
+              </div>
+              <div className="home-metric">
+                <Vote size={18} />
+                <span>Оценено</span>
+                <strong>{state?.voting.history.length ?? 0}</strong>
+              </div>
+            </div>
+            <div className="admin-session-actions">
+              <button className="danger-button" onClick={() => adminCall('/api/admin/reset-session')}>
+                <Trash2 size={18} />
+                Новая сессия
+              </button>
+            </div>
           </div>
-        </div>
-      </section>
+
+          <div className="console-panel">
+            <div className="panel-title">
+              <Users size={18} />
+              Участники
+            </div>
+            <div className="stats-row">
+              <strong>{onlineParticipantsCount}</strong>
+              <span>онлайн</span>
+              <strong>{participants.length}</strong>
+              <span>всего</span>
+            </div>
+            <ParticipantPager participants={participants} pageSize={10} />
+          </div>
+
+          <div className="console-panel">
+            <div className="panel-title">
+              <Trophy size={18} />
+              Рейтинг
+            </div>
+            <Leaderboard rows={leaderboardRows} pageSize={10} />
+          </div>
+        </section>
+      )}
+
+      {adminMode === 'roulette' && (
+        <section className="admin-roulette-grid">
+          <div className="console-panel admin-roulette-controls">
+            <div className="panel-title">
+              <Shuffle size={18} />
+              Рулетка
+            </div>
+            <div className="random-admin__row">
+              <label>
+                Победителей
+                <input
+                  type="number"
+                  min={1}
+                  max={Math.max(1, participants.length)}
+                  value={randomWinnerCount}
+                  onChange={(event) => setRandomWinnerCount(Number(event.target.value))}
+                  disabled={participants.length === 0 || random?.active}
+                />
+              </label>
+              <div className="random-count">
+                <strong>{participants.length === 0 ? 0 : Math.min(randomWinnerCount, participants.length)}</strong>
+                <span>из {participants.length}</span>
+              </div>
+            </div>
+            <div className="button-grid two">
+              <button className="primary-button" onClick={startRandomDraw} disabled={participants.length === 0 || random?.active}>
+                <Shuffle size={18} />
+                Старт
+              </button>
+              <button className="secondary-button" onClick={() => adminCall('/api/admin/random/reset')} disabled={!random?.active && !random?.winners.length}>
+                <RotateCcw size={18} />
+                Сброс
+              </button>
+            </div>
+          </div>
+          {random ? <RandomDrawView participants={participants} random={random} /> : <p className="empty-text">Ждем состояние эфира</p>}
+        </section>
+      )}
+
+      {adminMode === 'quiz' && (
+        <section className="admin-grid admin-grid--single">
+          <div className="console-panel">
+            <div className="panel-title">
+              <Play size={18} />
+              Эфир
+            </div>
+            <div className="live-state">
+              <strong>{phaseLabel(state?.phase ?? 'idle')}</strong>
+              <span>{activeRound ? activeRound.title : 'Викторина не запущена'}</span>
+            </div>
+            {state?.phase === 'quiz-question' && <TimerRing endsAt={state.quiz.questionEndsAt} compact />}
+            <div className="button-grid">
+              <select value={effectiveRoundId} onChange={(event) => setSelectedRoundId(event.target.value)}>
+                {draftRounds.map((round) => (
+                  <option key={round.id} value={round.id}>
+                    {round.title}
+                  </option>
+                ))}
+              </select>
+              <button className="primary-button" onClick={() => adminCall('/api/admin/quiz/start', { roundId: effectiveRoundId })}>
+                <Play size={18} />
+                Старт / продолжить
+              </button>
+              <button className="secondary-button" onClick={() => adminCall('/api/admin/quiz/end-question')}>
+                <CircleStop size={18} />
+                Стоп вопрос
+              </button>
+              <button className="danger-button" onClick={() => adminCall('/api/admin/reset-scores')}>
+                <RotateCcw size={18} />
+                Сброс баллов
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {adminMode === 'voting' && (
+        <section className="admin-grid admin-grid--single">
+          <div className="console-panel voting-panel">
+            <div className="panel-title">
+              <Vote size={18} />
+              Голосование
+            </div>
+            <label>
+              Участник для оценки
+              <select
+                value={selectedVoteParticipantId}
+                onChange={(event) => setSelectedVoteParticipantId(event.target.value)}
+                disabled={participants.length === 0 || availableVoteParticipants.length === 0}
+              >
+                {participants.length === 0 && <option value="">Пока нет участников</option>}
+                {participants.length > 0 && availableVoteParticipants.length === 0 && <option value="">Все уже оценены</option>}
+                {participants.map((participant) => {
+                  const alreadyVoted = votedParticipantIds.has(participant.id);
+                  return (
+                    <option key={participant.id} value={participant.id} disabled={alreadyVoted}>
+                      {participant.nickname}
+                      {alreadyVoted ? ' — уже голосовали' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <input
+              placeholder="Короткое описание, например: приложение команды"
+              value={voteDescription}
+              onChange={(event) => setVoteDescription(event.target.value)}
+            />
+            <div className="button-grid two">
+              <button className="primary-button" onClick={startVoting} disabled={!selectedVoteParticipant || votedParticipantIds.has(selectedVoteParticipant.id)}>
+                <Radio size={18} />
+                Запустить
+              </button>
+              <button className="secondary-button" onClick={() => adminCall('/api/admin/voting/stop')}>
+                <CircleStop size={18} />
+                Завершить
+              </button>
+            </div>
+            {state?.voting.session.target && (
+              <div className="vote-summary">
+                <strong>{state.voting.session.target.name}</strong>
+                <span>{state.voting.session.votes.length} голосов</span>
+                {state.voting.results[0] && <em>{state.voting.results[0].average.toFixed(2)}</em>}
+              </div>
+            )}
+            <div className="voting-history">
+              <div className="panel-title">
+                <Check size={17} />
+                Уже голосовали
+              </div>
+              {state?.voting.history.length ? (
+                state.voting.history.map((result) => (
+                  <div className="voting-history__row" key={result.targetId}>
+                    <strong>{result.name}</strong>
+                    <span>{result.votesCount} голосов</span>
+                    <em>{result.average.toFixed(2)}</em>
+                  </div>
+                ))
+              ) : (
+                <p className="empty-text">Пока никто не оценен</p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {adminMode === 'quiz' && (
         <section className="editor-section">
@@ -1135,17 +1473,24 @@ function RoundEditor({
   }, [activeQuestionIndex, round.questions.length]);
 
   async function handleMediaUpload(questionId: string, file: File) {
-    const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : null;
+    const kind = file.type.startsWith('image/')
+      ? 'image'
+      : file.type.startsWith('video/')
+        ? 'video'
+        : file.type.startsWith('audio/')
+          ? 'audio'
+          : null;
+
     if (!kind) {
-      setMediaErrors((errors) => ({ ...errors, [questionId]: 'Можно добавить только изображение или видео' }));
+      setMediaErrors((errors) => ({ ...errors, [questionId]: 'Можно добавить только изображение, видео или аудио' }));
       return;
     }
 
-    const limit = kind === 'image' ? IMAGE_LIMIT_BYTES : VIDEO_LIMIT_BYTES;
+    const limit = kind === 'image' ? IMAGE_LIMIT_BYTES : kind === 'video' ? VIDEO_LIMIT_BYTES : AUDIO_LIMIT_BYTES;
     if (file.size > limit) {
       setMediaErrors((errors) => ({
         ...errors,
-        [questionId]: `${kind === 'image' ? 'Фото' : 'Видео'} слишком тяжелое. Лимит ${formatBytes(limit)}.`
+        [questionId]: `${mediaKindLabel(kind)} слишком тяжелое. Лимит ${formatBytes(limit)}.`
       }));
       return;
     }
@@ -1304,7 +1649,7 @@ function RoundEditor({
               />
               <div className="question-media-editor">
                 <div className="question-media-editor__head">
-                  <span>Фото или видео</span>
+                  <span>Медиафайл</span>
                   {currentQuestion.media && (
                     <button className="ghost-button" onClick={() => onUpdateQuestion(round.id, currentQuestion.id, { media: undefined })}>
                       Убрать медиа
@@ -1316,18 +1661,18 @@ function RoundEditor({
                     <QuestionMediaView media={currentQuestion.media} compact />
                     <div>
                       <strong>{currentQuestion.media.name}</strong>
-                      <small>{currentQuestion.media.kind === 'image' ? 'Изображение' : 'Видео'}</small>
+                      <small>{mediaKindLabel(currentQuestion.media.kind)}</small>
                     </div>
                   </div>
                 ) : (
-                  <p className="media-helper">Добавь фото для вопросов вроде “Кто на фото?” или короткое видео для демо.</p>
+                  <p className="media-helper">Добавь изображение, видео или аудио для вопроса.</p>
                 )}
                 <label className="media-upload-button">
                   <Upload size={18} />
-                  Добавить фото/видео
+                  Добавить медиафайл
                   <input
                     type="file"
-                    accept="image/*,video/*"
+                    accept="image/*,video/*,audio/*"
                     onChange={async (event) => {
                       const input = event.currentTarget;
                       const file = input.files?.[0];
@@ -1373,7 +1718,9 @@ function phaseLabel(phase: string) {
     'quiz-question': 'Вопрос в эфире',
     'quiz-results': 'Результаты викторины',
     voting: 'Голосование',
-    'voting-results': 'Итоги голосования'
+    'voting-results': 'Итоги голосования',
+    'random-drawing': 'Розыгрыш',
+    'random-results': 'Итоги розыгрыша'
   };
 
   return labels[phase] ?? phase;

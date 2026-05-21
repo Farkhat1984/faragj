@@ -1,4 +1,4 @@
-export type Phase = 'idle' | 'quiz-question' | 'quiz-results' | 'voting' | 'voting-results';
+export type Phase = 'idle' | 'quiz-question' | 'quiz-results' | 'voting' | 'voting-results' | 'random-drawing' | 'random-results';
 
 export type Participant = {
   id: string;
@@ -16,7 +16,7 @@ export type QuizQuestion = {
 };
 
 export type QuestionMedia = {
-  kind: 'image' | 'video';
+  kind: 'image' | 'video' | 'audio';
   url: string;
   name: string;
   mimeType?: string;
@@ -74,6 +74,22 @@ export type VotingResult = {
   total: number;
 };
 
+export type RandomWinner = {
+  participantId: string;
+  nickname: string;
+  place: number;
+};
+
+export type RandomDrawState = {
+  id: string;
+  active: boolean;
+  winnersCount: number;
+  participantsCount: number;
+  startedAt: number | null;
+  endedAt: number | null;
+  winners: RandomWinner[];
+};
+
 export type PublicState = {
   phase: Phase;
   participants: Array<Participant & { online: boolean }>;
@@ -98,6 +114,7 @@ export type PublicState = {
     results: VotingResult[];
     history: VotingResult[];
   };
+  random: RandomDrawState;
 };
 
 export type PlayerState = {
@@ -113,4 +130,5 @@ export type PlayerState = {
     hasVoted: boolean;
     results: VotingResult[];
   };
+  random: RandomDrawState;
 };

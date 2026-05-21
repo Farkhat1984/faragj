@@ -3,7 +3,9 @@ export type Phase =
   | 'quiz-question'
   | 'quiz-results'
   | 'voting'
-  | 'voting-results';
+  | 'voting-results'
+  | 'random-drawing'
+  | 'random-results';
 
 export type Participant = {
   id: string;
@@ -24,7 +26,7 @@ export type QuizQuestion = {
 };
 
 export type QuestionMedia = {
-  kind: 'image' | 'video';
+  kind: 'image' | 'video' | 'audio';
   url: string;
   name: string;
   mimeType?: string;
@@ -79,6 +81,22 @@ export type VotingSession = {
   endedAt: number | null;
 };
 
+export type RandomWinner = {
+  participantId: string;
+  nickname: string;
+  place: number;
+};
+
+export type RandomDrawState = {
+  id: string;
+  active: boolean;
+  winnersCount: number;
+  participantsCount: number;
+  startedAt: number | null;
+  endedAt: number | null;
+  winners: RandomWinner[];
+};
+
 export type PublicState = {
   phase: Phase;
   participants: Array<Pick<Participant, 'id' | 'nickname' | 'score' | 'online'>>;
@@ -96,6 +114,7 @@ export type PublicState = {
     results: VotingResult[];
     history: VotingResult[];
   };
+  random: RandomDrawState;
 };
 
 export type PlayerState = {
@@ -111,6 +130,7 @@ export type PlayerState = {
     hasVoted: boolean;
     results: VotingResult[];
   };
+  random: RandomDrawState;
 };
 
 export type PublicQuestion = {

@@ -1,6 +1,6 @@
 import cors from 'cors';
 import express from 'express';
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -15,6 +15,8 @@ import {
   PublicQuestion,
   PublicState,
   QuestionResult,
+  RandomDrawState,
+  RandomWinner,
   QuizRound,
   VotingResult,
   VotingSession,
@@ -24,6 +26,7 @@ import {
 const PORT = Number(process.env.PORT ?? 4000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'vibe';
 const QUESTION_RESULT_PAUSE_MS = 3000;
+const RANDOM_DRAW_MS = 2800;
 const QUIZ_ROUNDS_FILE = path.resolve(process.cwd(), 'data/quiz-rounds.json');
 
 const app = express();
@@ -43,6 +46,7 @@ const socketParticipants = new Map<string, string>();
 
 let phase: Phase = 'idle';
 let roundTimer: NodeJS.Timeout | null = null;
+let randomTimer: NodeJS.Timeout | null = null;
 
 const legacyDemoQuizRounds: QuizRound[] = [
   {
@@ -103,7 +107,7 @@ function normalizeQuizRounds(rounds: QuizRound[]) {
       options: question.options.slice(0, 4),
       correctIndex: Math.min(3, Math.max(0, Number(question.correctIndex) || 0)),
       media:
-        question.media?.url && (question.media.kind === 'image' || question.media.kind === 'video')
+        question.media?.url && (question.media.kind === 'image' || question.media.kind === 'video' || question.media.kind === 'audio')
           ? {
               kind: question.media.kind,
               url: question.media.url,
@@ -160,6 +164,20 @@ let voting: VotingSession = {
 };
 
 let votingHistory: VotingResult[] = [];
+
+function createRandomDrawState(): RandomDrawState {
+  return {
+    id: randomUUID(),
+    active: false,
+    winnersCount: 0,
+    participantsCount: 0,
+    startedAt: null,
+    endedAt: null,
+    winners: []
+  };
+}
+
+let randomDraw: RandomDrawState = createRandomDrawState();
 
 function normalizeNickname(name: string) {
   const latinMap: Record<string, string> = {
@@ -300,6 +318,20 @@ function votingResults(): VotingResult[] {
   ];
 }
 
+function pickRandomWinners(pool: Participant[], winnersCount: number): RandomWinner[] {
+  const shuffled = [...pool];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  return shuffled.slice(0, winnersCount).map((participant, index) => ({
+    participantId: participant.id,
+    nickname: participant.nickname,
+    place: index + 1
+  }));
+}
+
 function publicState(): PublicState {
   return {
     phase,
@@ -322,7 +354,8 @@ function publicState(): PublicState {
       session: voting,
       results: votingResults(),
       history: votingHistory
-    }
+    },
+    random: randomDraw
   };
 }
 
@@ -349,7 +382,8 @@ function playerState(participantId: string): PlayerState | null {
       active: voting.active,
       hasVoted: voting.votes.some((vote) => vote.participantId === participantId),
       results: votingResults()
-    }
+    },
+    random: randomDraw
   };
 }
 
@@ -369,8 +403,24 @@ function clearRoundTimer() {
   }
 }
 
+function clearRandomTimer() {
+  if (randomTimer) {
+    clearTimeout(randomTimer);
+    randomTimer = null;
+  }
+}
+
+function resetRandomDraw() {
+  clearRandomTimer();
+  randomDraw = createRandomDrawState();
+  if (phase === 'random-drawing' || phase === 'random-results') {
+    phase = 'idle';
+  }
+}
+
 function resetLiveSession() {
   clearRoundTimer();
+  clearRandomTimer();
 
   for (const socketId of participantSockets.values()) {
     io.to(socketId).emit('player:reset', 'Началась новая сессия. Войди заново.');
@@ -397,6 +447,7 @@ function resetLiveSession() {
     endedAt: null
   };
   votingHistory = [];
+  randomDraw = createRandomDrawState();
 }
 
 function startQuestion(round: QuizRound, questionIndex: number) {
@@ -520,6 +571,11 @@ app.put('/api/admin/rounds', assertAdmin, (req, res) => {
 });
 
 app.post('/api/admin/quiz/start', assertAdmin, (req, res) => {
+  if (randomDraw.active) {
+    res.status(400).json({ message: 'Дождись окончания розыгрыша' });
+    return;
+  }
+
   const roundId = String(req.body?.roundId ?? quizRounds[0]?.id ?? '');
   const round = quizRounds.find((item) => item.id === roundId);
   if (!round) {
@@ -589,6 +645,11 @@ app.post('/api/admin/reset-session', assertAdmin, (_req, res) => {
 });
 
 app.post('/api/admin/voting/start', assertAdmin, (req, res) => {
+  if (randomDraw.active) {
+    res.status(400).json({ message: 'Дождись окончания розыгрыша' });
+    return;
+  }
+
   const target = req.body?.target as VoteTarget;
   if (!target?.id) {
     res.status(400).json({ message: 'Выбери участника из списка' });
@@ -641,6 +702,68 @@ app.post('/api/admin/voting/stop', assertAdmin, (_req, res) => {
   voting.active = false;
   voting.endedAt = Date.now();
   phase = 'voting-results';
+  emitState();
+  res.json(publicState());
+});
+
+app.post('/api/admin/random/start', assertAdmin, (req, res) => {
+  if (randomDraw.active) {
+    res.status(400).json({ message: 'Розыгрыш уже идет' });
+    return;
+  }
+
+  if (phase === 'quiz-question') {
+    res.status(400).json({ message: 'Сначала останови текущий вопрос' });
+    return;
+  }
+
+  if (phase === 'voting' && voting.active) {
+    res.status(400).json({ message: 'Сначала заверши голосование' });
+    return;
+  }
+
+  const pool = [...participants.values()];
+  const winnersCount = Number(req.body?.winnersCount);
+  if (pool.length === 0) {
+    res.status(400).json({ message: 'Нет участников для розыгрыша' });
+    return;
+  }
+
+  if (!Number.isInteger(winnersCount) || winnersCount < 1 || winnersCount > pool.length) {
+    res.status(400).json({ message: `Укажи число победителей от 1 до ${pool.length}` });
+    return;
+  }
+
+  const winners = pickRandomWinners(pool, winnersCount);
+  randomDraw = {
+    id: randomUUID(),
+    active: true,
+    winnersCount,
+    participantsCount: pool.length,
+    startedAt: Date.now(),
+    endedAt: null,
+    winners: []
+  };
+  phase = 'random-drawing';
+  emitState();
+
+  randomTimer = setTimeout(() => {
+    randomDraw = {
+      ...randomDraw,
+      active: false,
+      endedAt: Date.now(),
+      winners
+    };
+    phase = 'random-results';
+    randomTimer = null;
+    emitState();
+  }, RANDOM_DRAW_MS);
+
+  res.json(publicState());
+});
+
+app.post('/api/admin/random/reset', assertAdmin, (_req, res) => {
+  resetRandomDraw();
   emitState();
   res.json(publicState());
 });

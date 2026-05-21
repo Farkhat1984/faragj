@@ -229,6 +229,18 @@ function makeRound() {
           name: 'sample.mp4',
           mimeType: 'video/mp4'
         }
+      },
+      {
+        id: 'e2e-q3',
+        text: 'Какой файл звучит в вопросе?',
+        options: ['Фото', 'Видео', 'Аудио', 'Текст'],
+        correctIndex: 2,
+        media: {
+          kind: 'audio',
+          url: 'data:audio/mpeg;base64,AAAA',
+          name: 'sample.mp3',
+          mimeType: 'audio/mpeg'
+        }
       }
     ]
   };
@@ -352,6 +364,7 @@ async function main() {
     assert(round, 'E2E round was not saved', state.quiz.rounds);
     assert(round.questions[0].media?.kind === 'image', 'Image media was not saved');
     assert(round.questions[1].media?.kind === 'video', 'Video media was not saved');
+    assert(round.questions[2].media?.kind === 'audio', 'Audio media was not saved');
 
     await expectStatus('POST', '/api/admin/quiz/start', 404, { roundId: 'missing-round' }, adminToken);
     return {
@@ -473,6 +486,50 @@ async function main() {
     );
 
     return result;
+  });
+
+  await step('random draw: validation, realtime spin, 3 unique winners, reset', async () => {
+    await expectStatus('POST', '/api/admin/random/start', 401, { winnersCount: 1 });
+    await expectStatus('POST', '/api/admin/random/start', 400, { winnersCount: 0 }, adminToken);
+    await expectStatus('POST', '/api/admin/random/start', 400, { winnersCount: PARTICIPANT_COUNT + 1 }, adminToken);
+
+    const drawing = await admin('POST', '/api/admin/random/start', { winnersCount: 3 });
+    assert(drawing.phase === 'random-drawing', 'Random draw did not enter drawing phase', drawing);
+    assert(drawing.random.active === true, 'Random draw was not marked active', drawing.random);
+    assert(drawing.random.winnersCount === 3, 'Random draw winner count is wrong', drawing.random);
+    assert(drawing.random.participantsCount === PARTICIPANT_COUNT, 'Random draw participant count is wrong', drawing.random);
+
+    await waitForPlayers('players receive random drawing phase', (state) => {
+      return state.phase === 'random-drawing' && state.random.active && state.random.winnersCount === 3;
+    });
+
+    await expectStatus('POST', '/api/admin/random/start', 400, { winnersCount: 1 }, adminToken);
+
+    const state = await waitForAdminState('random winners ready', (nextState) => {
+      return nextState.phase === 'random-results' && !nextState.random.active && nextState.random.winners.length === 3;
+    }, 7000);
+
+    await waitForPlayers('players receive random results', (playerState) => {
+      return playerState.phase === 'random-results' && playerState.random.winners.length === 3;
+    }, 7000);
+
+    const winnerIds = new Set(state.random.winners.map((winner) => winner.participantId));
+    assert(winnerIds.size === 3, 'Random winners are not unique', state.random.winners);
+    assert(state.random.winners.every((winner, index) => winner.place === index + 1), 'Random places are not sequential', state.random.winners);
+    assert(
+      state.random.winners.every((winner) => users.some((user) => user.id === winner.participantId)),
+      'Random winner is not an existing participant',
+      state.random.winners
+    );
+
+    const reset = await admin('POST', '/api/admin/random/reset');
+    assert(reset.phase === 'idle', 'Random reset did not return phase to idle', reset);
+    assert(reset.random.winners.length === 0 && !reset.random.active, 'Random reset did not clear winners', reset.random);
+
+    return {
+      winners: state.random.winners.map((winner) => `${winner.place}:${winner.nickname}`),
+      participants: state.random.participantsCount
+    };
   });
 
   await step('session reset notifies all players and stale participant ids are rejected', async () => {
