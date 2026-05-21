@@ -1202,8 +1202,10 @@ function AdminApp() {
               Главная
             </div>
             <div className="live-state">
-              <strong>{phaseLabel(state?.phase ?? 'idle')}</strong>
-              <span>{activeRound ? activeRound.title : 'Викторина не запущена'}</span>
+              <div className="live-state__info">
+                <strong>{phaseLabel(state?.phase ?? 'idle')}</strong>
+                <span>{activeRound ? activeRound.title : 'Викторина не запущена'}</span>
+              </div>
             </div>
             <div className="home-metrics">
               <div className="home-metric">
@@ -1306,10 +1308,12 @@ function AdminApp() {
               Эфир
             </div>
             <div className="live-state">
-              <strong>{phaseLabel(state?.phase ?? 'idle')}</strong>
-              <span>{activeRound ? activeRound.title : 'Викторина не запущена'}</span>
+              <div className="live-state__info">
+                <strong>{phaseLabel(state?.phase ?? 'idle')}</strong>
+                <span>{activeRound ? activeRound.title : 'Викторина не запущена'}</span>
+              </div>
+              {state?.phase === 'quiz-question' && <TimerRing endsAt={state.quiz.questionEndsAt} compact />}
             </div>
-            {state?.phase === 'quiz-question' && <TimerRing endsAt={state.quiz.questionEndsAt} compact />}
             <div className="button-grid">
               <select value={effectiveRoundId} onChange={(event) => setSelectedRoundId(event.target.value)}>
                 {draftRounds.map((round) => (

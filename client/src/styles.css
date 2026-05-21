@@ -1384,12 +1384,20 @@ p {
 }
 
 .live-state {
-  display: grid;
-  gap: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
   padding: 12px;
   background: var(--surface-blue);
+}
+
+.live-state__info {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 
 .live-state strong {
