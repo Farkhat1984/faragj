@@ -1385,7 +1385,7 @@ p {
 
 .live-state {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   gap: 12px;
   border: 1px solid #bfdbfe;
@@ -1398,6 +1398,16 @@ p {
   display: grid;
   gap: 5px;
   min-width: 0;
+  align-content: center;
+}
+
+.live-state .timer-ring {
+  width: auto;
+  aspect-ratio: 1;
+}
+
+.live-state .timer-ring strong {
+  font-size: 1.1rem;
 }
 
 .live-state strong {
