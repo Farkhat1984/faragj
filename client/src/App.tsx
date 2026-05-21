@@ -626,17 +626,13 @@ function PlayerApp() {
           <div className="answer-grid">
             {state.activeQuestion.options.map((option, index) => {
               const feedback =
-                answerFeedback && answerFeedback.questionId === state.activeQuestion!.id ? answerFeedback : null;
-              const isPickedCorrect = feedback?.selectedIndex === index && feedback.isCorrect;
-              const isPickedWrong = feedback?.selectedIndex === index && !feedback.isCorrect;
-              const isCorrectReveal = feedback && !feedback.isCorrect && feedback.correctIndex === index;
+                answerFeedback && answerFeedback.questionId === state.activeQuestion!.id && answerFeedback.selectedIndex === index
+                  ? answerFeedback
+                  : null;
               return (
                 <button
                   key={option + index}
-                  className={cls(
-                    (isPickedCorrect || isCorrectReveal) && 'is-correct',
-                    isPickedWrong && 'is-wrong'
-                  )}
+                  className={cls(feedback?.isCorrect && 'is-correct', feedback && !feedback.isCorrect && 'is-wrong')}
                   disabled={state.hasAnswered || Boolean(answerStatus)}
                   onClick={() => answer(index)}
                 >
