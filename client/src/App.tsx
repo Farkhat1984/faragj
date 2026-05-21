@@ -33,7 +33,7 @@ import {
   X
 } from 'lucide-react';
 import type React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { api } from './api';
 import { PlayerState, PublicState, QuestionMedia, QuizQuestion, QuizRound, RandomDrawState } from './types';
@@ -429,10 +429,17 @@ function PlayerApp() {
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
   const [playerMode, setPlayerMode] = useState<PlayerMode>('menu');
 
+  const quizCardRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     setAnswerStatus('');
     setAnswerFeedback(null);
-  }, [state?.activeQuestion?.id]);
+    if (state?.activeQuestion?.id && state.phase === 'quiz-question') {
+      requestAnimationFrame(() => {
+        quizCardRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+    }
+  }, [state?.activeQuestion?.id, state?.phase]);
 
   useEffect(() => {
     setVoteStatus('');
@@ -604,7 +611,7 @@ function PlayerApp() {
       )}
 
       {state && playerMode === 'quiz' && state.phase === 'quiz-question' && state.activeQuestion && (
-        <section className="quiz-card">
+        <section className="quiz-card" ref={quizCardRef}>
           <div className="quiz-meta">
             <span>{state.activeQuestion.roundTitle}</span>
             <span>

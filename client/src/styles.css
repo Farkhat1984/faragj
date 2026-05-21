@@ -561,6 +561,10 @@ p {
   padding: 22px;
 }
 
+.quiz-card {
+  scroll-margin-top: 12px;
+}
+
 .waiting-card,
 .results-card {
   min-height: 340px;
@@ -1919,7 +1923,6 @@ p {
     width: 88px;
   }
 
-  .answer-grid,
   .menu-widget-grid,
   .admin-grid,
   .admin-media-preview,
@@ -1933,8 +1936,14 @@ p {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .answer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
   .answer-grid button {
-    min-height: 78px;
+    min-height: 64px;
+    padding: 10px;
   }
 
   .rating-row {
