@@ -677,6 +677,10 @@ p {
   font-weight: 700;
 }
 
+.timer-text {
+  color: var(--red);
+}
+
 .question-media {
   display: grid;
   gap: 8px;

@@ -308,7 +308,7 @@ function TimerText({ endsAt }: { endsAt: number | null }) {
   const now = useTicker();
   const remaining = Math.max(0, (endsAt ?? now) - now);
   const seconds = Math.ceil(remaining / 1000);
-  return <span aria-label={`Осталось ${seconds} секунд`}>{seconds}с</span>;
+  return <span className="timer-text" aria-label={`Осталось ${seconds} секунд`}>{seconds}с</span>;
 }
 
 function ConnectionPill({ connected }: { connected: boolean }) {
@@ -626,9 +626,11 @@ function PlayerApp() {
       {state && playerMode === 'quiz' && state.phase === 'quiz-question' && state.activeQuestion && (
         <section className="quiz-card" ref={quizCardRef}>
           <div className="quiz-meta">
-            <span>{state.activeQuestion.roundTitle}</span>
             <span>
-              {state.activeQuestion.number}/{state.activeQuestion.total} · <TimerText endsAt={state.questionEndsAt} />
+              <TimerText endsAt={state.questionEndsAt} /> · {state.activeQuestion.roundTitle}
+            </span>
+            <span>
+              {state.activeQuestion.number}/{state.activeQuestion.total}
             </span>
           </div>
           {state.activeQuestion.media && <QuestionMediaView media={state.activeQuestion.media} />}
