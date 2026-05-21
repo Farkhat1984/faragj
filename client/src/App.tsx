@@ -376,11 +376,7 @@ function LoginScreen({
   return (
     <main className="player-shell login-shell">
       <section className="login-hero">
-        <div className="brand-mark">
-          <Sparkles size={18} />
-          Vibe Code Live
-        </div>
-        <h1>Зал подключается к вайбу</h1>
+        <h1>quiz.ai by faragj</h1>
         <p>Введи ник, отвечай быстро, голосуй честно.</p>
       </section>
 
@@ -1517,7 +1513,7 @@ function RoundEditor({
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const currentQuestion = round.questions[activeQuestionIndex] ?? round.questions[0];
 
-  const ROUND_TAB_PAGE_SIZE = 5;
+  const ROUND_TAB_PAGE_SIZE = 3;
   const [tabPage, setTabPage] = useState(0);
   const totalTabPages = Math.max(1, Math.ceil(rounds.length / ROUND_TAB_PAGE_SIZE));
   const visibleTabs = rounds.slice(tabPage * ROUND_TAB_PAGE_SIZE, tabPage * ROUND_TAB_PAGE_SIZE + ROUND_TAB_PAGE_SIZE);
