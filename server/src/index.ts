@@ -1,9 +1,11 @@
 import cors from 'cors';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { Server } from 'socket.io';
+import { defaultQuizRounds } from './defaultQuizRounds.js';
 import {
   AnswerRecord,
   LeaderboardEntry,
@@ -22,6 +24,7 @@ import {
 const PORT = Number(process.env.PORT ?? 4000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'vibe';
 const QUESTION_RESULT_PAUSE_MS = 3000;
+const QUIZ_ROUNDS_FILE = path.resolve(process.cwd(), 'data/quiz-rounds.json');
 
 const app = express();
 app.use(cors());
@@ -41,7 +44,7 @@ const socketParticipants = new Map<string, string>();
 let phase: Phase = 'idle';
 let roundTimer: NodeJS.Timeout | null = null;
 
-let quizRounds: QuizRound[] = [
+const legacyDemoQuizRounds: QuizRound[] = [
   {
     id: 'round-demo',
     title: 'Разминка: Vibe Code',
@@ -79,6 +82,60 @@ let quizRounds: QuizRound[] = [
     ]
   }
 ];
+
+function cloneQuizRounds(rounds: QuizRound[]) {
+  return structuredClone(rounds);
+}
+
+function normalizeQuizRounds(rounds: QuizRound[]) {
+  return rounds.map((round) => ({
+    ...round,
+    id: round.id || randomUUID(),
+    timerSeconds: Math.max(5, Number(round.timerSeconds) || 15),
+    speedBonus: {
+      first: Math.max(1, Number(round.speedBonus?.first) || 3),
+      second: Math.max(1, Number(round.speedBonus?.second) || 2),
+      default: Math.max(1, Number(round.speedBonus?.default) || 1)
+    },
+    questions: round.questions.map((question) => ({
+      ...question,
+      id: question.id || randomUUID(),
+      options: question.options.slice(0, 4),
+      correctIndex: Math.min(3, Math.max(0, Number(question.correctIndex) || 0)),
+      media:
+        question.media?.url && (question.media.kind === 'image' || question.media.kind === 'video')
+          ? {
+              kind: question.media.kind,
+              url: question.media.url,
+              name: question.media.name || 'media',
+              mimeType: question.media.mimeType
+            }
+          : undefined
+    }))
+  }));
+}
+
+function loadQuizRounds() {
+  if (fs.existsSync(QUIZ_ROUNDS_FILE)) {
+    try {
+      const rounds = JSON.parse(fs.readFileSync(QUIZ_ROUNDS_FILE, 'utf8')) as QuizRound[];
+      if (Array.isArray(rounds) && rounds.length > 0) {
+        return normalizeQuizRounds(rounds);
+      }
+    } catch (error) {
+      console.warn('Could not load saved quiz rounds, using defaults.', error);
+    }
+  }
+
+  return cloneQuizRounds(defaultQuizRounds.length > 0 ? defaultQuizRounds : legacyDemoQuizRounds);
+}
+
+function saveQuizRounds(rounds: QuizRound[]) {
+  fs.mkdirSync(path.dirname(QUIZ_ROUNDS_FILE), { recursive: true });
+  fs.writeFileSync(QUIZ_ROUNDS_FILE, `${JSON.stringify(rounds, null, 2)}\n`, 'utf8');
+}
+
+let quizRounds: QuizRound[] = loadQuizRounds();
 
 let quiz = {
   activeRoundId: null as string | null,
@@ -455,31 +512,8 @@ app.put('/api/admin/rounds', assertAdmin, (req, res) => {
     }
   }
 
-  quizRounds = rounds.map((round) => ({
-    ...round,
-    id: round.id || randomUUID(),
-    timerSeconds: Math.max(5, Number(round.timerSeconds) || 15),
-    speedBonus: {
-      first: Math.max(1, Number(round.speedBonus?.first) || 3),
-      second: Math.max(1, Number(round.speedBonus?.second) || 2),
-      default: Math.max(1, Number(round.speedBonus?.default) || 1)
-    },
-    questions: round.questions.map((question) => ({
-      ...question,
-      id: question.id || randomUUID(),
-      options: question.options.slice(0, 4),
-      correctIndex: Math.min(3, Math.max(0, Number(question.correctIndex) || 0)),
-      media:
-        question.media?.url && (question.media.kind === 'image' || question.media.kind === 'video')
-          ? {
-              kind: question.media.kind,
-              url: question.media.url,
-              name: question.media.name || 'media',
-              mimeType: question.media.mimeType
-            }
-          : undefined
-    }))
-  }));
+  quizRounds = normalizeQuizRounds(rounds);
+  saveQuizRounds(quizRounds);
 
   emitState();
   res.json(publicState());

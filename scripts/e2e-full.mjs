@@ -41,6 +41,8 @@ const steps = [];
 const users = [];
 let adminToken = null;
 let adminSocket = null;
+let originalQuizRounds = null;
+let restoredOriginalQuizRounds = false;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -196,7 +198,7 @@ async function waitForPlayers(name, predicate, timeoutMs = 5000) {
 function makeRound() {
   return {
     id: 'e2e-round',
-    title: 'E2E Full Round',
+    title: 'Проверочная викторина',
     timerSeconds: 10,
     speedBonus: {
       first: 5,
@@ -206,8 +208,8 @@ function makeRound() {
     questions: [
       {
         id: 'e2e-q1',
-        text: 'Question 1: choose B',
-        options: ['A', 'B', 'C', 'D'],
+        text: 'Сколько будет 2 + 2?',
+        options: ['3', '4', '5', '6'],
         correctIndex: 1,
         media: {
           kind: 'image',
@@ -218,8 +220,8 @@ function makeRound() {
       },
       {
         id: 'e2e-q2',
-        text: 'Question 2: choose D',
-        options: ['A', 'B', 'C', 'D'],
+        text: 'Какой цвет у ясного дневного неба?',
+        options: ['Красный', 'Зеленый', 'Желтый', 'Синий'],
         correctIndex: 3,
         media: {
           kind: 'video',
@@ -241,6 +243,15 @@ function nicknameFor(index) {
 }
 
 async function cleanup() {
+  if (adminToken && originalQuizRounds && !restoredOriginalQuizRounds) {
+    try {
+      await admin('PUT', '/api/admin/rounds', { rounds: originalQuizRounds });
+      restoredOriginalQuizRounds = true;
+    } catch (error) {
+      console.error(`WARN could not restore original quiz rounds: ${error.message}`);
+    }
+  }
+
   for (const user of users) {
     user.socket?.disconnect();
   }
@@ -263,6 +274,7 @@ async function main() {
     const login = await expectStatus('POST', '/api/admin/login', 200, { password: ADMIN_PASSWORD });
     assert(login.token === ADMIN_PASSWORD, 'Admin token does not match expected password token');
     adminToken = login.token;
+    originalQuizRounds = (await publicState()).quiz.rounds;
     await admin('POST', '/api/admin/reset-session');
     return { tokenReceived: Boolean(adminToken) };
   });
@@ -488,6 +500,11 @@ async function main() {
     staleSocket.disconnect();
 
     assert(messages.length === PARTICIPANT_COUNT, 'Not every participant received reset message', messages);
+
+    if (originalQuizRounds) {
+      await admin('PUT', '/api/admin/rounds', { rounds: originalQuizRounds });
+      restoredOriginalQuizRounds = true;
+    }
 
     return {
       resetMessages: messages.length,
