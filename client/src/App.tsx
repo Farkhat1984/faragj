@@ -225,6 +225,9 @@ function usePlayerSocket(participantId: string | null) {
   useEffect(() => {
     if (!participantId) return;
 
+    setKickedMessage('');
+    setResetMessage('');
+
     const socket: Socket = io();
     socket.on('connect', () => {
       setConnected(true);
@@ -416,12 +419,19 @@ function PlayerApp() {
 
   const { state, connected, kickedMessage, resetMessage } = usePlayerSocket(participant?.id ?? null);
   const [answerStatus, setAnswerStatus] = useState('');
+  const [answerFeedback, setAnswerFeedback] = useState<{
+    questionId: string;
+    selectedIndex: number;
+    isCorrect: boolean;
+    correctIndex: number;
+  } | null>(null);
   const [voteStatus, setVoteStatus] = useState('');
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
   const [playerMode, setPlayerMode] = useState<PlayerMode>('menu');
 
   useEffect(() => {
     setAnswerStatus('');
+    setAnswerFeedback(null);
   }, [state?.activeQuestion?.id]);
 
   useEffect(() => {
@@ -448,14 +458,25 @@ function PlayerApp() {
 
   async function answer(selectedIndex: number) {
     if (!participant || !state?.activeQuestion || state.hasAnswered) return;
+    const questionId = state.activeQuestion.id;
     setAnswerStatus('Отправляем...');
 
     try {
-      const result = await api<{ accepted: boolean; awardedPoints: number }>('/api/quiz/answer', {
-        method: 'POST',
-        body: JSON.stringify({ participantId: participant.id, selectedIndex })
-      });
-      setAnswerStatus(result.awardedPoints > 0 ? `+${result.awardedPoints} балл` : 'Ответ принят');
+      const result = await api<{ accepted: boolean; awardedPoints: number; isCorrect: boolean; correctIndex: number }>(
+        '/api/quiz/answer',
+        {
+          method: 'POST',
+          body: JSON.stringify({ participantId: participant.id, selectedIndex })
+        }
+      );
+      setAnswerFeedback({ questionId, selectedIndex, isCorrect: result.isCorrect, correctIndex: result.correctIndex });
+      setAnswerStatus(
+        result.isCorrect
+          ? result.awardedPoints > 0
+            ? `Верно · +${result.awardedPoints} балл`
+            : 'Верно'
+          : 'Не угадал'
+      );
     } catch (caught) {
       setAnswerStatus((caught as Error).message);
     }
@@ -596,12 +617,27 @@ function PlayerApp() {
             <TimerRing endsAt={state.questionEndsAt} />
           </div>
           <div className="answer-grid">
-            {state.activeQuestion.options.map((option, index) => (
-              <button key={option + index} disabled={state.hasAnswered || Boolean(answerStatus)} onClick={() => answer(index)}>
-                <span>{String.fromCharCode(65 + index)}</span>
-                {option}
-              </button>
-            ))}
+            {state.activeQuestion.options.map((option, index) => {
+              const feedback =
+                answerFeedback && answerFeedback.questionId === state.activeQuestion!.id ? answerFeedback : null;
+              const isPickedCorrect = feedback?.selectedIndex === index && feedback.isCorrect;
+              const isPickedWrong = feedback?.selectedIndex === index && !feedback.isCorrect;
+              const isCorrectReveal = feedback && !feedback.isCorrect && feedback.correctIndex === index;
+              return (
+                <button
+                  key={option + index}
+                  className={cls(
+                    (isPickedCorrect || isCorrectReveal) && 'is-correct',
+                    isPickedWrong && 'is-wrong'
+                  )}
+                  disabled={state.hasAnswered || Boolean(answerStatus)}
+                  onClick={() => answer(index)}
+                >
+                  <span>{String.fromCharCode(65 + index)}</span>
+                  {option}
+                </button>
+              );
+            })}
           </div>
           <p className="action-status">{state.hasAnswered ? answerStatus || 'Ответ принят' : answerStatus}</p>
         </section>

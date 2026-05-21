@@ -739,6 +739,30 @@ p {
   box-shadow: var(--shadow-sm);
 }
 
+.answer-grid button.is-correct,
+.answer-grid button.is-correct:disabled,
+.answer-grid button.is-correct:hover {
+  border-color: var(--green);
+  background: var(--surface-green);
+  color: var(--green-dark);
+}
+
+.answer-grid button.is-correct span {
+  background: var(--green);
+}
+
+.answer-grid button.is-wrong,
+.answer-grid button.is-wrong:disabled,
+.answer-grid button.is-wrong:hover {
+  border-color: var(--red);
+  background: var(--surface-red);
+  color: var(--red-dark);
+}
+
+.answer-grid button.is-wrong span {
+  background: var(--red);
+}
+
 .answer-grid span {
   display: grid;
   place-items: center;

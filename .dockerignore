@@ -1,0 +1,11 @@
+node_modules
+dist
+server/dist
+.git
+.gitignore
+*.log
+.env
+.DS_Store
+test-artifacts
+data
+README.md

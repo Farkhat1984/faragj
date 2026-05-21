@@ -825,7 +825,7 @@ app.post('/api/quiz/answer', (req, res) => {
   });
 
   emitState();
-  res.json({ accepted: true, awardedPoints });
+  res.json({ accepted: true, awardedPoints, isCorrect, correctIndex: question.correctIndex });
 });
 
 app.post('/api/voting/vote', (req, res) => {
