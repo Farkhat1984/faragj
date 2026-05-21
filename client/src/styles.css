@@ -1560,6 +1560,69 @@ p {
   gap: 8px;
 }
 
+.round-tabs__list {
+  display: grid;
+  gap: 8px;
+}
+
+.round-settings-toggle {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.round-settings-toggle > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.round-settings-toggle > summary::-webkit-details-marker {
+  display: none;
+}
+
+.round-settings-toggle > summary > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.round-settings-toggle > summary > span strong {
+  color: var(--ink);
+  font-size: 0.98rem;
+}
+
+.round-settings-toggle > summary > span small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.round-settings-toggle > summary::after {
+  content: '⌄';
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform 0.16s ease;
+}
+
+.round-settings-toggle[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.round-settings-toggle[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.round-settings-toggle .round-settings {
+  padding: 12px;
+}
+
 .quiz-tab {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 40px;
@@ -1924,7 +1987,7 @@ p {
     grid-template-columns: 1fr;
   }
 
-  .round-tabs {
+  .round-tabs__list {
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   }
 }
@@ -1994,11 +2057,21 @@ p {
 
   .admin-header {
     grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
+    align-items: center;
   }
 
   .admin-actions {
-    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .admin-actions .ghost-button {
+    padding: 0 10px;
+  }
+
+  .admin-actions .connection-pill {
+    padding: 0 9px;
   }
 
   .admin-session-actions {
@@ -2019,14 +2092,12 @@ p {
     min-width: 0;
   }
 
-  .admin-actions,
   .editor-actions,
   .round-create-form {
     width: 100%;
     justify-content: stretch;
   }
 
-  .admin-actions > *,
   .editor-actions > *,
   .round-create-form > * {
     flex: 1;

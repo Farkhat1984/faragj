@@ -1517,6 +1517,22 @@ function RoundEditor({
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const currentQuestion = round.questions[activeQuestionIndex] ?? round.questions[0];
 
+  const ROUND_TAB_PAGE_SIZE = 5;
+  const [tabPage, setTabPage] = useState(0);
+  const totalTabPages = Math.max(1, Math.ceil(rounds.length / ROUND_TAB_PAGE_SIZE));
+  const visibleTabs = rounds.slice(tabPage * ROUND_TAB_PAGE_SIZE, tabPage * ROUND_TAB_PAGE_SIZE + ROUND_TAB_PAGE_SIZE);
+
+  useEffect(() => {
+    const idx = rounds.findIndex((item) => item.id === round.id);
+    if (idx >= 0) {
+      setTabPage(Math.floor(idx / ROUND_TAB_PAGE_SIZE));
+    }
+  }, [round.id, rounds]);
+
+  useEffect(() => {
+    if (tabPage > totalTabPages - 1) setTabPage(Math.max(0, totalTabPages - 1));
+  }, [tabPage, totalTabPages]);
+
   useEffect(() => {
     setActiveQuestionIndex(0);
   }, [round.id]);
@@ -1575,78 +1591,91 @@ function RoundEditor({
   return (
     <div className="round-editor">
       <aside className="round-tabs">
-        {rounds.map((item) => (
-          <div key={item.id} className={cls('quiz-tab', item.id === round.id && 'is-active')}>
-            <button className="quiz-tab__select" onClick={() => onSelect(item.id)}>
-              <Pencil size={15} />
-              <span>
-                <strong>{item.title || 'Без названия'}</strong>
-                <small>
-                  {item.questions.length} вопр. · {item.timerSeconds} сек
-                </small>
-              </span>
-            </button>
-            <button className="quiz-tab__delete" title="Удалить викторину" onClick={() => onDeleteRound(item.id)}>
-              <Trash2 size={16} />
-            </button>
-          </div>
-        ))}
+        <div className="round-tabs__list">
+          {visibleTabs.map((item) => (
+            <div key={item.id} className={cls('quiz-tab', item.id === round.id && 'is-active')}>
+              <button className="quiz-tab__select" onClick={() => onSelect(item.id)}>
+                <Pencil size={15} />
+                <span>
+                  <strong>{item.title || 'Без названия'}</strong>
+                  <small>
+                    {item.questions.length} вопр. · {item.timerSeconds} сек
+                  </small>
+                </span>
+              </button>
+              <button className="quiz-tab__delete" title="Удалить викторину" onClick={() => onDeleteRound(item.id)}>
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <PagerControls page={tabPage} totalPages={totalTabPages} onPageChange={setTabPage} />
       </aside>
 
       <div className="round-body">
-        <div className="round-settings">
-          <label>
-            Название викторины
-            <input value={round.title} onChange={(event) => onUpdateRound(round.id, { title: event.target.value })} />
-          </label>
-          <label>
-            Таймер
-            <input
-              type="number"
-              min={5}
-              max={90}
-              value={round.timerSeconds}
-              onChange={(event) => onUpdateRound(round.id, { timerSeconds: Number(event.target.value) })}
-            />
-          </label>
-          <label>
-            1-й
-            <input
-              type="number"
-              min={1}
-              value={round.speedBonus.first}
-              onChange={(event) =>
-                onUpdateRound(round.id, { speedBonus: { ...round.speedBonus, first: Number(event.target.value) } })
-              }
-            />
-          </label>
-          <label>
-            2-й
-            <input
-              type="number"
-              min={1}
-              value={round.speedBonus.second}
-              onChange={(event) =>
-                onUpdateRound(round.id, { speedBonus: { ...round.speedBonus, second: Number(event.target.value) } })
-              }
-            />
-          </label>
-          <label>
-            Остальные
-            <input
-              type="number"
-              min={1}
-              value={round.speedBonus.default}
-              onChange={(event) =>
-                onUpdateRound(round.id, { speedBonus: { ...round.speedBonus, default: Number(event.target.value) } })
-              }
-            />
-          </label>
-          <button className="danger-button round-delete-button" title="Удалить викторину" onClick={() => onDeleteRound(round.id)}>
-            <Trash2 size={18} />
-            Удалить
-          </button>
-        </div>
+        <details className="round-settings-toggle">
+          <summary>
+            <span>
+              <strong>Настройки викторины</strong>
+              <small>
+                {round.timerSeconds} сек · {round.speedBonus.first}/{round.speedBonus.second}/{round.speedBonus.default}
+              </small>
+            </span>
+          </summary>
+          <div className="round-settings">
+            <label>
+              Название викторины
+              <input value={round.title} onChange={(event) => onUpdateRound(round.id, { title: event.target.value })} />
+            </label>
+            <label>
+              Таймер
+              <input
+                type="number"
+                min={5}
+                max={90}
+                value={round.timerSeconds}
+                onChange={(event) => onUpdateRound(round.id, { timerSeconds: Number(event.target.value) })}
+              />
+            </label>
+            <label>
+              1-й
+              <input
+                type="number"
+                min={1}
+                value={round.speedBonus.first}
+                onChange={(event) =>
+                  onUpdateRound(round.id, { speedBonus: { ...round.speedBonus, first: Number(event.target.value) } })
+                }
+              />
+            </label>
+            <label>
+              2-й
+              <input
+                type="number"
+                min={1}
+                value={round.speedBonus.second}
+                onChange={(event) =>
+                  onUpdateRound(round.id, { speedBonus: { ...round.speedBonus, second: Number(event.target.value) } })
+                }
+              />
+            </label>
+            <label>
+              Остальные
+              <input
+                type="number"
+                min={1}
+                value={round.speedBonus.default}
+                onChange={(event) =>
+                  onUpdateRound(round.id, { speedBonus: { ...round.speedBonus, default: Number(event.target.value) } })
+                }
+              />
+            </label>
+            <button className="danger-button round-delete-button" title="Удалить викторину" onClick={() => onDeleteRound(round.id)}>
+              <Trash2 size={18} />
+              Удалить
+            </button>
+          </div>
+        </details>
 
         <div className="question-carousel">
           <div className="question-carousel__top">
