@@ -401,7 +401,7 @@ p {
 
 .player-topbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--line);
@@ -409,6 +409,26 @@ p {
   padding: 14px;
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  vertical-align: middle;
+}
+
+.status-dot.is-online {
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.13);
+}
+
+.status-dot.is-offline {
+  background: var(--red);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.13);
 }
 
 .shell-title {
@@ -705,9 +725,7 @@ p {
 
 .question-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 108px;
   gap: 18px;
-  align-items: center;
 }
 
 .question-head h2 {
@@ -1914,19 +1932,6 @@ p {
   .console-panel,
   .editor-section {
     padding: 15px;
-  }
-
-  .player-topbar {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .player-topbar .connection-pill {
-    grid-column: 2 / -1;
-    justify-self: start;
-  }
-
-  .question-head {
-    grid-template-columns: 1fr;
   }
 
   .timer-ring {

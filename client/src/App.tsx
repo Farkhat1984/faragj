@@ -304,6 +304,13 @@ function TimerRing({ endsAt, compact = false }: { endsAt: number | null; compact
   );
 }
 
+function TimerText({ endsAt }: { endsAt: number | null }) {
+  const now = useTicker();
+  const remaining = Math.max(0, (endsAt ?? now) - now);
+  const seconds = Math.ceil(remaining / 1000);
+  return <span aria-label={`Осталось ${seconds} секунд`}>{seconds}с</span>;
+}
+
 function ConnectionPill({ connected }: { connected: boolean }) {
   return (
     <span className={cls('connection-pill', connected ? 'is-online' : 'is-offline')}>
@@ -529,13 +536,19 @@ function PlayerApp() {
         <BurgerMenu title="Меню участника" subtitle="участник" activeId={playerMode} items={playerMenuItems} onSelect={setPlayerMode} />
         <div className="shell-title">
           <span className="eyebrow">участник</span>
-          <h1>{state?.participant.nickname ?? participant.nickname}</h1>
+          <h1>
+            <span
+              className={cls('status-dot', connected ? 'is-online' : 'is-offline')}
+              aria-label={connected ? 'в сети' : 'нет связи'}
+              title={connected ? 'в сети' : 'нет связи'}
+            />
+            {state?.participant.nickname ?? participant.nickname}
+          </h1>
         </div>
         <div className="score-chip">
           <Trophy size={17} />
           {state?.participant.score ?? 0}
         </div>
-        <ConnectionPill connected={connected} />
       </header>
 
       {!state && (
@@ -615,13 +628,12 @@ function PlayerApp() {
           <div className="quiz-meta">
             <span>{state.activeQuestion.roundTitle}</span>
             <span>
-              {state.activeQuestion.number}/{state.activeQuestion.total}
+              {state.activeQuestion.number}/{state.activeQuestion.total} · <TimerText endsAt={state.questionEndsAt} />
             </span>
           </div>
           {state.activeQuestion.media && <QuestionMediaView media={state.activeQuestion.media} />}
           <div className="question-head">
             <h2>{state.activeQuestion.text}</h2>
-            <TimerRing endsAt={state.questionEndsAt} />
           </div>
           <div className="answer-grid">
             {state.activeQuestion.options.map((option, index) => {
