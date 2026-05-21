@@ -10,6 +10,7 @@
     "build": "npm run server:build && npm run client:build",
     "client:build": "tsc -p client/tsconfig.json && vite build --config client/vite.config.ts",
     "server:build": "tsc -p server/tsconfig.json",
+    "e2e:full": "node scripts/e2e-full.mjs",
     "start": "node server/dist/index.js"
   },
   "dependencies": {
