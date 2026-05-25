@@ -53,7 +53,7 @@ export const DEFAULT_CONFIG: InvestGameConfig = {
   capPerAssetPct: 30,
   capPerSectorPct: 60,
   tradingSeconds: 90,
-  briefingSeconds: 12,
+  briefingSeconds: 18,
   eventRevealSeconds: 7,
   resultsSeconds: 10,
   allowedKinds: DEFAULT_KINDS_NORMAL,
@@ -72,26 +72,101 @@ function resolveEventsForGame(
   rng: () => number
 ): Record<number, EventCard[]> {
   const events: Record<number, EventCard[]> = {};
-  const floatingPool = [...FLOATING_EVENTS];
-  const fakePool = [...FAKE_EVENTS];
+  // Каждый id → год последнего появления. Карта на кулдауне COOLDOWN_YEARS.
+  const lastUsed: Record<string, number> = {};
+  const COOLDOWN_YEARS = 4;
+  // Минимум 2 fake-карты среди подобранных, минимум 2 floating — для разнообразия.
+  const MIN_FAKE = 1;
+  const MIN_FLOATING = 2;
+
+  function shuffle<T>(arr: T[]): T[] {
+    const out = arr.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
 
   for (let y = startYear; y <= endYear; y++) {
     const yearEvents: EventCard[] = [];
-    // 1) реальные привязанные
+    const usedThisYear = new Set<string>();
+
+    // 1) Все реальные привязанные к году
     for (const real of eventsForYear(y)) {
       yearEvents.push(real);
+      usedThisYear.add(real.id);
+      lastUsed[real.id] = y;
     }
-    // 2) 0-1 floating
-    if (rng() < 0.45 && floatingPool.length > 0) {
-      const idx = Math.floor(rng() * floatingPool.length);
-      yearEvents.push(floatingPool.splice(idx, 1)[0]);
+
+    // Цель — 5..10 карт в год
+    const target = 5 + Math.floor(rng() * 6);
+
+    function pick(pool: EventCard[], minCount: number) {
+      const available = shuffle(
+        pool.filter(
+          (e) => !usedThisYear.has(e.id) && (lastUsed[e.id] === undefined || y - lastUsed[e.id] >= COOLDOWN_YEARS)
+        )
+      );
+      // Если кулдаун слишком жёсткий — берём «старейшие» из пула, игнорируя кулдаун
+      const fallback =
+        available.length < minCount
+          ? shuffle(pool.filter((e) => !usedThisYear.has(e.id)))
+              .sort((a, b) => (lastUsed[a.id] ?? -Infinity) - (lastUsed[b.id] ?? -Infinity))
+          : [];
+      let added = 0;
+      for (const e of [...available, ...fallback]) {
+        if (yearEvents.length >= target) break;
+        if (usedThisYear.has(e.id)) continue;
+        yearEvents.push(e);
+        usedThisYear.add(e.id);
+        lastUsed[e.id] = y;
+        added++;
+        if (added >= pool.length) break;
+      }
+      return added;
     }
-    // 3) 0-1 fake
-    if (rng() < 0.5 && fakePool.length > 0) {
-      const idx = Math.floor(rng() * fakePool.length);
-      yearEvents.push(fakePool.splice(idx, 1)[0]);
+
+    // 2) Минимум floating и fake
+    let floatingAdded = 0;
+    let fakeAdded = 0;
+    // отдельно посчитаем — итеративно
+    const floatingPool = FLOATING_EVENTS;
+    const fakePool = FAKE_EVENTS;
+
+    // сначала добиваем минимум floating
+    {
+      const before = yearEvents.length;
+      pick(floatingPool, MIN_FLOATING);
+      floatingAdded = yearEvents.length - before;
     }
-    events[y] = yearEvents;
+    // потом минимум fake
+    {
+      const before = yearEvents.length;
+      pick(fakePool, MIN_FAKE);
+      fakeAdded = yearEvents.length - before;
+    }
+
+    // 3) Добиваем до target смесью floating/fake
+    while (yearEvents.length < target) {
+      const mix = shuffle([...floatingPool, ...fakePool]);
+      let progressed = false;
+      for (const e of mix) {
+        if (yearEvents.length >= target) break;
+        if (usedThisYear.has(e.id)) continue;
+        if (lastUsed[e.id] !== undefined && y - lastUsed[e.id] < COOLDOWN_YEARS) continue;
+        yearEvents.push(e);
+        usedThisYear.add(e.id);
+        lastUsed[e.id] = y;
+        progressed = true;
+      }
+      if (!progressed) break; // больше карт нет — выйдем
+    }
+
+    // Перемешаем порядок отображения, но real события вынесем вперёд для контекста
+    const reals = yearEvents.filter((e) => e.type === 'real');
+    const others = shuffle(yearEvents.filter((e) => e.type !== 'real'));
+    events[y] = [...reals, ...others];
   }
 
   return events;
