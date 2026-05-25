@@ -469,6 +469,16 @@ function TradingScreen({ state, selfId, onSubmit }: { state: InvestPlayerState; 
         <TimerChip endsAt={state.phaseEndsAt} />
       </header>
 
+      {!submitted && (
+        <div className="inv-trading-hint">
+          <Sparkles size={16} />
+          <span>
+            <strong>Двигай слайдеры</strong> — распредели капитал между активами.
+            Когда определился, нажми «Зафиксировать ход».
+          </span>
+        </div>
+      )}
+
       <div className="inv-trading">
         <div className="inv-shell">
           {GROUP_ORDER.map((group) => {
@@ -591,6 +601,29 @@ function TradingScreen({ state, selfId, onSubmit }: { state: InvestPlayerState; 
           </div>
         </aside>
       </div>
+
+      {/* Мобильная sticky-панель: видна только на узких экранах */}
+      <div className={`inv-mobile-cta${over ? ' is-over' : ''}${submitted ? ' is-locked-in' : ''}`}>
+        <div className="inv-mobile-cta__bar">
+          <small>
+            {submitted
+              ? 'Ход зафиксирован — ждём остальных'
+              : over
+                ? `Перебор: ${Math.round(allocated)}% (нужно 100%)`
+                : `Распределено ${Math.round(allocated)}% · кэш ${Math.round(cashPct)}%`}
+          </small>
+          <div className="inv-mobile-cta__progress" style={{ ['--alloc' as never]: `${Math.min(100, allocated).toFixed(1)}%` }} />
+        </div>
+        <button
+          type="button"
+          className={`inv-mobile-cta__button${submitted ? ' is-locked-in' : ''}`}
+          onClick={submit}
+          disabled={over || submitting || submitted}
+        >
+          <ShieldCheck size={18} />
+          {submitted ? 'Готово' : submitting ? '...' : 'Зафиксировать'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -643,6 +676,7 @@ function AssetTradeCard({
           step="1"
           value={Math.round(pct)}
           onChange={(e) => onChange(Number(e.target.value))}
+          style={{ ['--fill' as never]: `${Math.round(pct)}%` }}
         />
         <span className="inv-asset-card__pct">{Math.round(pct)}%</span>
       </div>
