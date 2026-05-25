@@ -1,4 +1,17 @@
-export type Phase = 'idle' | 'quiz-question' | 'quiz-results' | 'voting' | 'voting-results' | 'random-drawing' | 'random-results';
+export type Phase =
+  | 'idle'
+  | 'quiz-question'
+  | 'quiz-results'
+  | 'voting'
+  | 'voting-results'
+  | 'random-drawing'
+  | 'random-results'
+  | 'invest-lobby'
+  | 'invest-briefing'
+  | 'invest-trading'
+  | 'invest-event-reveal'
+  | 'invest-results'
+  | 'invest-final';
 
 export type Participant = {
   id: string;
@@ -115,6 +128,7 @@ export type PublicState = {
     history: VotingResult[];
   };
   random: RandomDrawState;
+  invest: import('./investTypes').InvestPublicState;
 };
 
 export type PlayerState = {
@@ -131,4 +145,5 @@ export type PlayerState = {
     results: VotingResult[];
   };
   random: RandomDrawState;
+  invest: import('./investTypes').InvestPlayerState;
 };

@@ -5,7 +5,13 @@ export type Phase =
   | 'voting'
   | 'voting-results'
   | 'random-drawing'
-  | 'random-results';
+  | 'random-results'
+  | 'invest-lobby'
+  | 'invest-briefing'
+  | 'invest-trading'
+  | 'invest-event-reveal'
+  | 'invest-results'
+  | 'invest-final';
 
 export type Participant = {
   id: string;
@@ -115,6 +121,7 @@ export type PublicState = {
     history: VotingResult[];
   };
   random: RandomDrawState;
+  invest: import('./invest/types.js').InvestPublicState;
 };
 
 export type PlayerState = {
@@ -131,6 +138,7 @@ export type PlayerState = {
     results: VotingResult[];
   };
   random: RandomDrawState;
+  invest: import('./invest/types.js').InvestPlayerState;
 };
 
 export type PublicQuestion = {

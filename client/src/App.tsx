@@ -7,6 +7,8 @@ import {
   Crown,
   Gift,
   Image as ImageIcon,
+  Landmark,
+  LineChart,
   ListChecks,
   LogIn,
   Medal,
@@ -32,6 +34,9 @@ import {
   WifiOff,
   X
 } from 'lucide-react';
+import { InvestPlayerView } from './InvestPlayer';
+import { InvestAdminView } from './InvestAdmin';
+import type { InvestPublicState } from './investTypes';
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
@@ -49,8 +54,8 @@ type StoredParticipant = {
   nickname: string;
 };
 
-type PlayerMode = 'menu' | 'quiz' | 'voting' | 'random';
-type AdminMode = 'home' | 'quiz' | 'voting' | 'roulette';
+type PlayerMode = 'menu' | 'quiz' | 'voting' | 'random' | 'invest';
+type AdminMode = 'home' | 'quiz' | 'voting' | 'roulette' | 'invest';
 
 type NavigationItem<T extends string> = {
   id: T;
@@ -460,6 +465,15 @@ function PlayerApp() {
     if (state.phase === 'random-drawing' || state.phase === 'random-results') {
       setPlayerMode('random');
     }
+    if (
+      state.phase === 'invest-briefing' ||
+      state.phase === 'invest-trading' ||
+      state.phase === 'invest-event-reveal' ||
+      state.phase === 'invest-results' ||
+      state.phase === 'invest-final'
+    ) {
+      setPlayerMode('invest');
+    }
   }, [state?.phase]);
 
   if (!participant || kickedMessage || resetMessage) {
@@ -518,10 +532,18 @@ function PlayerApp() {
     : state?.random.winners.length
       ? `${state.random.winners.length} побед.`
       : 'Ждем розыгрыш';
+  const investStatus = state?.invest?.active
+    ? state.invest.phase === 'invest-final'
+      ? 'Игра завершена'
+      : state.invest.game
+        ? `Год ${state.invest.game.currentYear}`
+        : 'Идёт игра'
+    : 'Ждем старт';
   const playerHomeStatus = state ? `${state.participant.score} баллов · ${connected ? 'онлайн' : 'нет связи'}` : 'Подключаемся';
   const playerMenuItems: Array<NavigationItem<PlayerMode>> = [
     { id: 'menu', label: 'Главная', status: playerHomeStatus, icon: <Sparkles size={20} /> },
     { id: 'quiz', label: 'Викторина', status: quizStatus, icon: <ListChecks size={20} /> },
+    { id: 'invest', label: 'Капитал', status: investStatus, icon: <Landmark size={20} /> },
     { id: 'voting', label: 'Голосование', status: votingStatus, icon: <Vote size={20} /> },
     { id: 'random', label: 'Рандом', status: randomStatus, icon: <Shuffle size={20} /> }
   ];
@@ -739,10 +761,20 @@ function PlayerApp() {
           />
         )}
 
-      <aside className="mobile-board">
-        <h3>Баллы участников</h3>
-        <Leaderboard rows={leaderboardRows} compact pageSize={10} />
-      </aside>
+      {state && playerMode === 'invest' && (
+        <InvestPlayerView
+          state={state.invest}
+          selfId={state.participant.id}
+          selfNickname={state.participant.nickname}
+        />
+      )}
+
+      {playerMode !== 'invest' && (
+        <aside className="mobile-board">
+          <h3>Баллы участников</h3>
+          <Leaderboard rows={leaderboardRows} compact pageSize={10} />
+        </aside>
+      )}
     </main>
   );
 }
@@ -1008,9 +1040,17 @@ function AdminApp() {
     : random?.winners.length
       ? `${random.winners.length} побед.`
       : `${participants.length} участников`;
+  const adminInvestStatus = state?.invest?.active
+    ? state.invest.phase === 'invest-final'
+      ? 'Финал'
+      : state.invest.game
+        ? `Год ${state.invest.game.currentYear} · ${state.invest.phase ?? ''}`
+        : 'В эфире'
+    : 'Готов к запуску';
   const adminMenuItems: Array<NavigationItem<AdminMode>> = [
     { id: 'home', label: 'Главная', status: adminHomeStatus, icon: <Sparkles size={20} /> },
     { id: 'quiz', label: 'Викторина', status: adminQuizStatus, icon: <ListChecks size={20} /> },
+    { id: 'invest', label: 'Капитал', status: adminInvestStatus, icon: <Landmark size={20} /> },
     { id: 'voting', label: 'Голосование', status: adminVotingStatus, icon: <Vote size={20} /> },
     { id: 'roulette', label: 'Рулетка', status: adminRandomStatus, icon: <Shuffle size={20} /> }
   ];
@@ -1483,6 +1523,14 @@ function AdminApp() {
             ))}
           </div>
         </section>
+      ) : null}
+
+      {adminMode === 'invest' && state ? (
+        <InvestAdminView
+          state={state.invest}
+          token={token!}
+          participantsCount={state.participants.length}
+        />
       ) : null}
     </main>
   );

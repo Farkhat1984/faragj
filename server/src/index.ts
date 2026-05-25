@@ -22,6 +22,18 @@ import {
   VotingSession,
   VoteTarget
 } from './types.js';
+import {
+  abortInvestGame,
+  applyInsiderBrief,
+  applySkipYear,
+  forceNextPhase as forceNextInvestPhase,
+  startInvestmentGame,
+  submitPlayerOrder
+} from './invest/orchestrator.js';
+import { buildInvestPlayerState, buildInvestPublicState, getInvestState } from './invest/state.js';
+import { DEFAULT_CONFIG, DEFAULT_KINDS_EASY, DEFAULT_KINDS_NORMAL, DEFAULT_KINDS_HARD, computeFinalSummary } from './invest/engine.js';
+import { InvestGameConfig, AssetKind, InvestDifficulty } from './invest/types.js';
+import { FIRST_YEAR, LAST_YEAR } from './invest/data/macro.js';
 
 const PORT = Number(process.env.PORT ?? 4000);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'vibe';
@@ -332,9 +344,21 @@ function pickRandomWinners(pool: Participant[], winnersCount: number): RandomWin
   }));
 }
 
+function participantsMap() {
+  const m = new Map<string, { id: string; nickname: string; online: boolean }>();
+  for (const p of participants.values()) {
+    m.set(p.id, { id: p.id, nickname: p.nickname, online: p.online });
+  }
+  return m;
+}
+
 function publicState(): PublicState {
+  const investState = getInvestState();
+  // Если активна инвест-игра — переопределяем phase из её фазы
+  const effectivePhase: Phase = investState.active && investState.phase ? investState.phase : phase;
+
   return {
-    phase,
+    phase: effectivePhase,
     participants: [...participants.values()].map((participant) => ({
       id: participant.id,
       nickname: participant.nickname,
@@ -355,7 +379,8 @@ function publicState(): PublicState {
       results: votingResults(),
       history: votingHistory
     },
-    random: randomDraw
+    random: randomDraw,
+    invest: buildInvestPublicState(participantsMap())
   };
 }
 
@@ -366,13 +391,16 @@ function playerState(participantId: string): PlayerState | null {
   const question = activeQuestion();
   const hasAnswered = question ? quiz.answers.some((answer) => answer.participantId === participantId && answer.questionId === question.id) : false;
 
+  const investState = getInvestState();
+  const effectivePhase: Phase = investState.active && investState.phase ? investState.phase : phase;
+
   return {
     participant: {
       id: participant.id,
       nickname: participant.nickname,
       score: participant.score
     },
-    phase,
+    phase: effectivePhase,
     activeQuestion: question,
     questionEndsAt: quiz.questionEndsAt,
     hasAnswered,
@@ -383,7 +411,8 @@ function playerState(participantId: string): PlayerState | null {
       hasVoted: voting.votes.some((vote) => vote.participantId === participantId),
       results: votingResults()
     },
-    random: randomDraw
+    random: randomDraw,
+    invest: buildInvestPlayerState(participantId, participantsMap())
   };
 }
 
@@ -421,6 +450,7 @@ function resetRandomDraw() {
 function resetLiveSession() {
   clearRoundTimer();
   clearRandomTimer();
+  abortInvestGame();
 
   for (const socketId of participantSockets.values()) {
     io.to(socketId).emit('player:reset', 'Началась новая сессия. Войди заново.');
@@ -575,6 +605,10 @@ app.post('/api/admin/quiz/start', assertAdmin, (req, res) => {
     res.status(400).json({ message: 'Дождись окончания розыгрыша' });
     return;
   }
+  if (getInvestState().active) {
+    res.status(400).json({ message: 'Сначала останови инвест-игру' });
+    return;
+  }
 
   const roundId = String(req.body?.roundId ?? quizRounds[0]?.id ?? '');
   const round = quizRounds.find((item) => item.id === roundId);
@@ -647,6 +681,10 @@ app.post('/api/admin/reset-session', assertAdmin, (_req, res) => {
 app.post('/api/admin/voting/start', assertAdmin, (req, res) => {
   if (randomDraw.active) {
     res.status(400).json({ message: 'Дождись окончания розыгрыша' });
+    return;
+  }
+  if (getInvestState().active) {
+    res.status(400).json({ message: 'Сначала останови инвест-игру' });
     return;
   }
 
@@ -722,6 +760,11 @@ app.post('/api/admin/random/start', assertAdmin, (req, res) => {
     return;
   }
 
+  if (getInvestState().active) {
+    res.status(400).json({ message: 'Сначала останови инвест-игру' });
+    return;
+  }
+
   const pool = [...participants.values()];
   const winnersCount = Number(req.body?.winnersCount);
   if (pool.length === 0) {
@@ -770,6 +813,174 @@ app.post('/api/admin/random/reset', assertAdmin, (_req, res) => {
 
 app.get('/api/admin/vote-targets', assertAdmin, (_req, res) => {
   res.json({ targets: voteTargets });
+});
+
+// ==================== INVEST GAME ====================
+
+const INVEST_KIND_PRESETS: Record<InvestDifficulty, AssetKind[]> = {
+  easy: DEFAULT_KINDS_EASY,
+  normal: DEFAULT_KINDS_NORMAL,
+  hard: DEFAULT_KINDS_HARD
+};
+
+app.get('/api/invest/meta', (_req, res) => {
+  res.json({
+    firstYear: FIRST_YEAR,
+    lastYear: LAST_YEAR,
+    defaults: DEFAULT_CONFIG,
+    kindPresets: INVEST_KIND_PRESETS
+  });
+});
+
+app.post('/api/admin/invest/start', assertAdmin, (req, res) => {
+  if (getInvestState().active) {
+    res.status(409).json({ message: 'Инвест-игра уже идёт' });
+    return;
+  }
+  if (phase === 'quiz-question' || randomDraw.active) {
+    res.status(409).json({ message: 'Сначала останови викторину/розыгрыш' });
+    return;
+  }
+
+  const body = req.body ?? {};
+  const difficulty: InvestDifficulty = ['easy', 'normal', 'hard'].includes(body.difficulty) ? body.difficulty : 'normal';
+  const allowedKinds: AssetKind[] = Array.isArray(body.allowedKinds) && body.allowedKinds.length > 0
+    ? body.allowedKinds
+    : INVEST_KIND_PRESETS[difficulty];
+
+  const config: InvestGameConfig = {
+    startYear: Math.max(FIRST_YEAR, Math.min(LAST_YEAR - 1, Number(body.startYear) || DEFAULT_CONFIG.startYear)),
+    endYear: Math.max(FIRST_YEAR + 1, Math.min(LAST_YEAR, Number(body.endYear) || DEFAULT_CONFIG.endYear)),
+    difficulty,
+    codenameMode: !!body.codenameMode,
+    startUsd: Math.max(1000, Number(body.startUsd) || DEFAULT_CONFIG.startUsd),
+    startKzt: Math.max(0, Number(body.startKzt) || DEFAULT_CONFIG.startKzt),
+    capPerAssetPct: Math.max(5, Math.min(100, Number(body.capPerAssetPct) || DEFAULT_CONFIG.capPerAssetPct)),
+    capPerSectorPct: Math.max(10, Math.min(100, Number(body.capPerSectorPct) || DEFAULT_CONFIG.capPerSectorPct)),
+    tradingSeconds: Math.max(20, Math.min(600, Number(body.tradingSeconds) || DEFAULT_CONFIG.tradingSeconds)),
+    briefingSeconds: Math.max(5, Math.min(60, Number(body.briefingSeconds) || DEFAULT_CONFIG.briefingSeconds)),
+    eventRevealSeconds: Math.max(3, Math.min(30, Number(body.eventRevealSeconds) || DEFAULT_CONFIG.eventRevealSeconds)),
+    resultsSeconds: Math.max(5, Math.min(60, Number(body.resultsSeconds) || DEFAULT_CONFIG.resultsSeconds)),
+    allowedKinds,
+    enableAltHistory: body.enableAltHistory !== false,
+    altHistoryCount: Math.max(0, Math.min(8, Number(body.altHistoryCount) ?? DEFAULT_CONFIG.altHistoryCount))
+  };
+
+  const pool = [...participants.values()];
+  if (pool.length === 0) {
+    res.status(400).json({ message: 'Нет игроков для инвест-игры' });
+    return;
+  }
+
+  const result = startInvestmentGame(
+    config,
+    pool.map((p) => p.id),
+    { emit: emitState }
+  );
+
+  if (!result.ok) {
+    res.status(400).json({ message: result.message });
+    return;
+  }
+
+  res.json(publicState());
+});
+
+app.post('/api/admin/invest/next-phase', assertAdmin, (_req, res) => {
+  const result = forceNextInvestPhase({ emit: emitState });
+  if (!result.ok) {
+    res.status(400).json({ message: result.message });
+    return;
+  }
+  res.json(publicState());
+});
+
+app.post('/api/admin/invest/abort', assertAdmin, (_req, res) => {
+  abortInvestGame();
+  emitState();
+  res.json(publicState());
+});
+
+app.get('/api/admin/invest/final', assertAdmin, (_req, res) => {
+  const state = getInvestState();
+  if (!state.active || !state.game || state.phase !== 'invest-final') {
+    res.status(400).json({ message: 'Финал ещё не наступил' });
+    return;
+  }
+  const nicknames = new Map<string, string>();
+  for (const p of participants.values()) nicknames.set(p.id, p.nickname);
+  const summary = computeFinalSummary(state.game, state.catalog, state.portfolios, nicknames);
+  res.json(summary);
+});
+
+app.get('/api/invest/final', (_req, res) => {
+  const state = getInvestState();
+  if (!state.active || !state.game || state.phase !== 'invest-final') {
+    res.status(400).json({ message: 'Финал ещё не наступил' });
+    return;
+  }
+  const nicknames = new Map<string, string>();
+  for (const p of participants.values()) nicknames.set(p.id, p.nickname);
+  const summary = computeFinalSummary(state.game, state.catalog, state.portfolios, nicknames);
+  res.json(summary);
+});
+
+app.post('/api/invest/order', (req, res) => {
+  const participantId = String(req.body?.participantId ?? '');
+  if (!participants.has(participantId)) {
+    res.status(404).json({ message: 'Игрок не найден' });
+    return;
+  }
+  const allocation = req.body?.targetAllocation;
+  if (!allocation || typeof allocation !== 'object') {
+    res.status(400).json({ message: 'Нужна аллокация' });
+    return;
+  }
+
+  const cleaned: Record<string, number> = {};
+  for (const [k, v] of Object.entries(allocation)) {
+    const num = Number(v);
+    if (Number.isFinite(num) && num >= 0) cleaned[k] = num;
+  }
+
+  const result = submitPlayerOrder(participantId, cleaned);
+  if (!result.ok) {
+    res.status(400).json({ message: result.message });
+    return;
+  }
+  emitState();
+  res.json({ accepted: true });
+});
+
+app.post('/api/invest/powerup/insider', (req, res) => {
+  const participantId = String(req.body?.participantId ?? '');
+  const assetId = String(req.body?.assetId ?? '');
+  if (!participants.has(participantId)) {
+    res.status(404).json({ message: 'Игрок не найден' });
+    return;
+  }
+  const result = applyInsiderBrief(participantId, assetId);
+  if (!result.ok) {
+    res.status(400).json({ message: result.message });
+    return;
+  }
+  emitState();
+  res.json({ accepted: true });
+});
+
+app.post('/api/invest/powerup/skip', (req, res) => {
+  const participantId = String(req.body?.participantId ?? '');
+  if (!participants.has(participantId)) {
+    res.status(404).json({ message: 'Игрок не найден' });
+    return;
+  }
+  const result = applySkipYear(participantId);
+  if (!result.ok) {
+    res.status(400).json({ message: result.message });
+    return;
+  }
+  emitState();
+  res.json({ accepted: true });
 });
 
 app.get(/^\/(?!api|socket\.io).*/, (_req, res) => {
